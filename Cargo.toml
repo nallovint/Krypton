@@ -1,6 +1,2 @@
-[package]
-name = "Krypton"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
+[workspace]
+members = ["krypton-cli", "krypton-lang", "krypton-lsp"]
