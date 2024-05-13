@@ -1,12 +1,10 @@
 use std::fmt::{Debug, Display, Formatter};
 
-use crate::bytecode::Error::UnrecognizedOpcode;
 use crate::bytecode::Instruction::Return;
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    UnrecognizedOpcode(String),
-    EmptyInstructionBytes,
+    InvalidBytesSize { expected: usize, actual: usize },
 }
 
 impl Display for Error {
@@ -15,8 +13,9 @@ impl Display for Error {
             f,
             "{}",
             match self {
-                UnrecognizedOpcode(op) => format!("Unrecognized opcode: {}", op),
-                Error::EmptyInstructionBytes => "Cannot decode instruction from empty bytes".to_string(),
+                Error::InvalidBytesSize { expected, actual } => {
+                    format!("Invalid bytes size: expected {}, got {}", expected, actual)
+                }
             }
         )
     }
@@ -25,77 +24,169 @@ impl Display for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone, Copy)]
+pub struct Version {
+    major: u8,
+    minor: u8,
+}
+
+impl Version {
+    pub fn new(major: u8, minor: u8) -> Self {
+        Self { major, minor }
+    }
+
+    pub fn current() -> Self {
+        // NOTE make sure to update this when the version changes
+        Self::new(0, 1)
+    }
+
+    pub fn major(&self) -> u8 {
+        self.major
+    }
+
+    pub fn minor(&self) -> u8 {
+        self.minor
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        vec![self.major, self.minor]
+    }
+
+    pub fn to_u16(&self) -> u16 {
+        (self.major as u16) << 8 | (self.minor as u16)
+    }
+}
+
+impl From<u16> for Version {
+    fn from(version: u16) -> Self {
+        Self {
+            major: (version >> 8) as u8,
+            minor: (version & 0xFF) as u8,
+        }
+    }
+}
+
+impl TryFrom<&[u8]> for Version {
+    type Error = Error;
+
+    fn try_from(version: &[u8]) -> Result<Self> {
+        if version.len() != 2 {
+            return Err(Error::InvalidBytesSize {
+                expected: 2,
+                actual: version.len(),
+            });
+        }
+        Ok(Self::from(u16::from_be_bytes([version[0], version[1]])))
+    }
+}
+
+impl Default for Version {
+    fn default() -> Self {
+        Self::current()
+    }
+}
+
+impl Display for Version {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.major, self.minor)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ConstantPoolEntry {
+    Double(f64),
+    Int(i32),
+}
+
+impl Display for ConstantPoolEntry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConstantPoolEntry::Double(value) => write!(f, "{}", value),
+            ConstantPoolEntry::Int(value) => write!(f, "{}", value),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LineNumberEntry {
+    start_pc: u16,
+    length: u16,
+    line_number: u16,
+    column_number: u16,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum Instruction {
+    Constant { cp_addr: u16 },
     Return,
 }
 
 impl Instruction {
-    pub fn assemble(instruction: &str) -> Result<Self> {
-        match instruction {
-            "ret" => Ok(Return),
-            _ => Err(UnrecognizedOpcode(instruction.to_string())),
-        }
-    }
-
-    pub fn disassemble(&self) -> String {
-        match self {
-            Return => "ret".to_string(),
-        }
-    }
-
     pub fn opcode(&self) -> u8 {
         match self {
-            Return => 0b_0000_0000,
+            Instruction::Constant { .. } => 0b_0000_0000,
+            Return => 0b_0000_0001,
         }
-    }
-
-    #[allow(clippy::vec_init_then_push)]
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(1);
-        bytes.push(self.opcode());
-        // match self {
-        //     Return => bytes.push(0b_0000_0000),
-        // }
-        bytes
-    }
-
-    pub fn from_bytes(bytes: &[u8], offset: &mut usize) -> Result<Self> {
-        if bytes.is_empty() {
-            return Err(Error::EmptyInstructionBytes);
-        }
-        let (instruction, size) = match bytes[0] {
-            0b_0000_0000 => (Ok(Return), 1),
-            byte => (Err(UnrecognizedOpcode(byte.to_string())), 0),
-        };
-        *offset += size;
-        instruction
     }
 }
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:04} {}", self.opcode(), self.disassemble())
+        write!(
+            f,
+            "{:04} {}",
+            self.opcode(),
+            match self {
+                Instruction::Constant { cp_addr } => {
+                    format!("const [{}]", cp_addr)
+                }
+                Return => "ret".to_string(),
+            }
+        )
     }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Bytecode {
+    name: Option<String>,
+    version: Version,
     instructions: Vec<Instruction>,
+    constant_pool: Vec<ConstantPoolEntry>,
+    line_number_table: Vec<LineNumberEntry>,
 }
 
 impl Bytecode {
-    pub fn new() -> Self {
+    pub fn new(name: String, version: Version) -> Self {
         Self {
-            instructions: Vec::new(),
+            name: Some(name),
+            version,
+            ..Default::default()
         }
     }
 
-    pub fn push(&mut self, op: Instruction) {
-        self.instructions.push(op);
+    pub fn with_name(name: String) -> Self {
+        Self {
+            name: Some(name),
+            ..Default::default()
+        }
     }
 
-    pub fn get_instruction(&self, index: usize) -> Option<&Instruction> {
-        self.instructions.get(index)
+    pub fn with_version(version: Version) -> Self {
+        Self {
+            version,
+            ..Default::default()
+        }
+    }
+
+    pub fn push_instruction(&mut self, instruction: Instruction) {
+        self.instructions.push(instruction);
+    }
+
+    pub fn push_constant(&mut self, constant: ConstantPoolEntry) {
+        self.constant_pool.push(constant);
+    }
+
+    pub fn push_line_number(&mut self, line_number: LineNumberEntry) {
+        self.line_number_table.push(line_number);
     }
 
     pub fn len(&self) -> usize {
@@ -106,75 +197,8 @@ impl Bytecode {
         self.instructions.is_empty()
     }
 
-    pub fn assemble(assembly: &[&str]) -> Result<Self> {
-        let mut bytecode = Bytecode::new();
-        for instruction in assembly {
-            bytecode.push(Instruction::assemble(instruction)?);
-        }
-        Ok(bytecode)
-    }
-
-    pub fn assemble_from_string(assembly: &str) -> Result<Self> {
-        let instructions: Vec<&str> = assembly
-            .split("\r\n")
-            .flat_map(|asm| asm.split('\n'))
-            .filter(|asm| !asm.is_empty())
-            .collect();
-        Self::assemble(&instructions)
-    }
-
-    pub fn disassemble(&self) -> Vec<String> {
-        self.instructions.iter().map(|op| op.disassemble()).collect()
-    }
-
-    pub fn disassemble_to_string(&self) -> String {
-        self.disassemble().join("\n")
-    }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        self.instructions.iter().flat_map(|op| op.to_bytes()).collect()
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.is_empty() {
-            return Err(Error::EmptyInstructionBytes);
-        }
-        let mut bytecode = Bytecode::new();
-        let mut offset = 0;
-        while offset < bytes.len() {
-            bytecode.push(Instruction::from_bytes(bytes, &mut offset)?);
-        }
-        Ok(bytecode)
-    }
-}
-
-impl From<Vec<Instruction>> for Bytecode {
-    fn from(instructions: Vec<Instruction>) -> Self {
-        Self { instructions }
-    }
-}
-
-impl From<&[Instruction]> for Bytecode {
-    fn from(instructions: &[Instruction]) -> Self {
-        Self {
-            instructions: instructions.to_vec(),
-        }
-    }
-}
-
-impl TryFrom<&str> for Bytecode {
-    type Error = Error;
-
-    fn try_from(assembly: &str) -> std::result::Result<Self, Self::Error> {
-        Self::assemble_from_string(assembly)
-    }
-}
-
-impl TryFrom<&[u8]> for Bytecode {
-    type Error = Error;
-
-    fn try_from(bytes: &[u8]) -> std::result::Result<Self, Self::Error> {
-        Self::from_bytes(bytes)
+    pub fn version(&self) -> Version {
+        self.version
     }
 }
 
@@ -183,8 +207,31 @@ impl Display for Bytecode {
         let instructions: Vec<String> = self
             .instructions
             .iter()
-            .map(|instruction| instruction.to_string())
+            .map(|instruction| {
+                let value_at_cp_addr = match instruction {
+                    Instruction::Constant { cp_addr } => {
+                        Some(self.constant_pool[*cp_addr as usize].to_string())
+                    }
+                    _ => None,
+                };
+                if let Some(extra) = value_at_cp_addr {
+                    format!("{} # {}", instruction, extra)
+                } else {
+                    format!("{}", instruction)
+                }
+            })
             .collect();
-        write!(f, "== Bytecode (Disassembled) ==\n{}", instructions.join("\n"))
+        let title = self
+            .name
+            .as_ref()
+            .map(|name| format!("{} Bytecode", name))
+            .unwrap_or_else(|| "Bytecode".to_string());
+        write!(
+            f,
+            "== {} v{} ==\n{}",
+            title,
+            self.version,
+            instructions.join("\n")
+        )
     }
 }
