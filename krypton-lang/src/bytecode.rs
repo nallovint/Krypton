@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display, Formatter};
 
-use crate::bytecode::Instruction::Return;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
 pub enum Error {
@@ -21,73 +21,59 @@ impl Display for Error {
     }
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
-
-#[derive(Debug, Clone, Copy)]
-pub struct Version {
-    major: u8,
-    minor: u8,
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
+pub enum Version {
+    V1,
+    V2,
+    V3,
 }
 
 impl Version {
-    pub fn new(major: u8, minor: u8) -> Self {
-        Self { major, minor }
+    pub fn latest() -> Self {
+        Self::V1
     }
 
-    pub fn current() -> Self {
-        // NOTE make sure to update this when the version changes
-        Self::new(0, 1)
+    pub fn preview() -> Option<Self> {
+        None
     }
 
-    pub fn major(&self) -> u8 {
-        self.major
-    }
-
-    pub fn minor(&self) -> u8 {
-        self.minor
-    }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        vec![self.major, self.minor]
-    }
-
-    pub fn to_u16(&self) -> u16 {
-        (self.major as u16) << 8 | (self.minor as u16)
-    }
-}
-
-impl From<u16> for Version {
-    fn from(version: u16) -> Self {
-        Self {
-            major: (version >> 8) as u8,
-            minor: (version & 0xFF) as u8,
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            Self::V1 => 1,
+            Self::V2 => 2,
+            Self::V3 => 3,
         }
     }
-}
 
-impl TryFrom<&[u8]> for Version {
-    type Error = Error;
+    pub fn from_u8(version: u8) -> Option<Self> {
+        Some(match version {
+            1 => Self::V1,
+            2 => Self::V2,
+            3 => Self::V3,
+            _ => return None,
+        })
+    }
 
-    fn try_from(version: &[u8]) -> Result<Self> {
-        if version.len() != 2 {
-            return Err(Error::InvalidBytesSize {
-                expected: 2,
-                actual: version.len(),
-            });
-        }
-        Ok(Self::from(u16::from_be_bytes([version[0], version[1]])))
+    pub fn is_valid(version: u8) -> bool {
+        Self::from_u8(version).is_some()
     }
 }
 
 impl Default for Version {
     fn default() -> Self {
-        Self::current()
+        Self::latest()
+    }
+}
+
+impl From<u8> for Version {
+    fn from(version: u8) -> Self {
+        Self::from_u8(version).expect("Invalid version")
     }
 }
 
 impl Display for Version {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}", self.major, self.minor)
+        write!(f, "v{}", self.to_u8())
     }
 }
 
@@ -95,6 +81,15 @@ impl Display for Version {
 pub enum ConstantPoolEntry {
     Double(f64),
     Int(i32),
+}
+
+impl ConstantPoolEntry {
+    pub fn tag(&self) -> u8 {
+        match self {
+            ConstantPoolEntry::Double(_) => 0b_0000_0000,
+            ConstantPoolEntry::Int(_) => 0b_0000_0001,
+        }
+    }
 }
 
 impl Display for ConstantPoolEntry {
@@ -108,23 +103,32 @@ impl Display for ConstantPoolEntry {
 
 #[derive(Debug, Clone, Copy)]
 pub struct LineNumberEntry {
-    start_pc: u16,
-    length: u16,
-    line_number: u16,
-    column_number: u16,
+    pub start_pc: usize,
+    pub line_number: u16,
+}
+
+impl LineNumberEntry {
+    pub fn new(start_pc: usize, line_number: u16) -> Self {
+        Self {
+            start_pc,
+            line_number,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum Instruction {
-    Constant { cp_addr: u16 },
+    LoadConstant8 { cp_addr: u8 },
+    LoadConstant16 { cp_addr: u16 },
     Return,
 }
 
 impl Instruction {
     pub fn opcode(&self) -> u8 {
         match self {
-            Instruction::Constant { .. } => 0b_0000_0000,
-            Return => 0b_0000_0001,
+            Instruction::LoadConstant8 { .. } => 0b_0110_0011,  // 'c'
+            Instruction::LoadConstant16 { .. } => 0b_0100_0011, // 'C'
+            Instruction::Return => 0b_0111_0010,                // 'r'
         }
     }
 }
@@ -133,20 +137,18 @@ impl Display for Instruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{:04} {}",
-            self.opcode(),
+            "{}",
             match self {
-                Instruction::Constant { cp_addr } => {
-                    format!("const [{}]", cp_addr)
-                }
-                Return => "ret".to_string(),
+                Instruction::LoadConstant8 { cp_addr } => format!("const [{}]", cp_addr),
+                Instruction::LoadConstant16 { cp_addr } => format!("const [{}]", cp_addr),
+                Instruction::Return => "ret".to_string(),
             }
         )
     }
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Bytecode {
+pub struct KlassBytecode {
     name: Option<String>,
     version: Version,
     instructions: Vec<Instruction>,
@@ -154,7 +156,7 @@ pub struct Bytecode {
     line_number_table: Vec<LineNumberEntry>,
 }
 
-impl Bytecode {
+impl KlassBytecode {
     pub fn new(name: String, version: Version) -> Self {
         Self {
             name: Some(name),
@@ -197,41 +199,79 @@ impl Bytecode {
         self.instructions.is_empty()
     }
 
+    fn get_line_number(&self, code_addr: usize) -> Option<u16> {
+        let entry_index = self
+            .line_number_table
+            .binary_search_by(|entry| entry.start_pc.cmp(&code_addr))
+            .map(Some)
+            .unwrap_or_else(|index| index.checked_sub(1))?;
+        self.line_number_table
+            .get(entry_index)
+            .map(|entry| entry.line_number)
+    }
+
+    pub fn name(&self) -> &Option<String> {
+        &self.name
+    }
+
     pub fn version(&self) -> Version {
         self.version
     }
+
+    pub fn instructions(&self) -> &Vec<Instruction> {
+        &self.instructions
+    }
+
+    pub fn constant_pool(&self) -> &Vec<ConstantPoolEntry> {
+        &self.constant_pool
+    }
+
+    pub fn line_number_table(&self) -> &Vec<LineNumberEntry> {
+        &self.line_number_table
+    }
 }
 
-impl Display for Bytecode {
+impl Display for KlassBytecode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let instructions: Vec<String> = self
             .instructions
             .iter()
-            .map(|instruction| {
+            .enumerate()
+            .map(|(i, instruction)| {
                 let value_at_cp_addr = match instruction {
-                    Instruction::Constant { cp_addr } => {
+                    Instruction::LoadConstant8 { cp_addr } => {
+                        Some(self.constant_pool[*cp_addr as usize].to_string())
+                    }
+                    Instruction::LoadConstant16 { cp_addr } => {
                         Some(self.constant_pool[*cp_addr as usize].to_string())
                     }
                     _ => None,
                 };
+                let prev_line = i.checked_sub(1).and_then(|i| self.get_line_number(i));
+                let line_number = self.get_line_number(i);
+                let line = match (prev_line, line_number) {
+                    (Some(prev), Some(line)) if prev == line => "    |".to_string(),
+                    _ => {
+                        if let Some(line) = line_number {
+                            format!("{:>5}", line)
+                        } else {
+                            "    ?".to_string()
+                        }
+                    }
+                };
                 if let Some(extra) = value_at_cp_addr {
-                    format!("{} # {}", instruction, extra)
+                    format!("{:04} {} {} # {}", instruction.opcode(), line, instruction, extra)
                 } else {
-                    format!("{}", instruction)
+                    format!("{:04} {} {}", instruction.opcode(), line, instruction)
                 }
             })
             .collect();
+
         let title = self
             .name
             .as_ref()
             .map(|name| format!("{} Bytecode", name))
             .unwrap_or_else(|| "Bytecode".to_string());
-        write!(
-            f,
-            "== {} v{} ==\n{}",
-            title,
-            self.version,
-            instructions.join("\n")
-        )
+        write!(f, "== {} {} ==\n{}", title, self.version, instructions.join("\n"))
     }
 }

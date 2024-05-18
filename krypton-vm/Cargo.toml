@@ -1,0 +1,11 @@
+[package]
+name = "krypton-vm"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+v1 = []
+v2 = []
+v3 = []
+
+[dependencies]

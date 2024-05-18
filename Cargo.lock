@@ -96,6 +96,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "krypton-lang",
+ "krypton-vm",
 ]
 
 [[package]]
@@ -104,6 +105,10 @@ version = "0.1.0"
 
 [[package]]
 name = "krypton-lsp"
+version = "0.1.0"
+
+[[package]]
+name = "krypton-vm"
 version = "0.1.0"
 
 [[package]]

@@ -1,3 +1,3 @@
 [workspace]
-members = ["krypton-cli", "krypton-lang", "krypton-lsp"]
+members = ["krypton-cli", "krypton-lang", "krypton-lsp", "krypton-vm"]
 resolver = "2"
