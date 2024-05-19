@@ -80,14 +80,18 @@ impl Display for Version {
 #[derive(Debug, Clone, Copy)]
 pub enum ConstantPoolEntry {
     Double(f64),
+    Float(f32),
+    Long(i64),
     Int(i32),
 }
 
 impl ConstantPoolEntry {
     pub fn tag(&self) -> u8 {
         match self {
-            ConstantPoolEntry::Double(_) => 0b_0000_0000,
-            ConstantPoolEntry::Int(_) => 0b_0000_0001,
+            ConstantPoolEntry::Double(_) => 0b_0100_0110, // 'F'
+            ConstantPoolEntry::Float(_) => 0b_0110_0110,  // 'f'
+            ConstantPoolEntry::Long(_) => 0b_0100_1001,   // 'I'
+            ConstantPoolEntry::Int(_) => 0b_0110_1001,    // 'i'
         }
     }
 }
@@ -96,6 +100,8 @@ impl Display for ConstantPoolEntry {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ConstantPoolEntry::Double(value) => write!(f, "{}", value),
+            ConstantPoolEntry::Float(value) => write!(f, "{}", value),
+            ConstantPoolEntry::Long(value) => write!(f, "{}", value),
             ConstantPoolEntry::Int(value) => write!(f, "{}", value),
         }
     }
@@ -121,6 +127,7 @@ pub enum Instruction {
     LoadConstant8 { cp_addr: u8 },
     LoadConstant16 { cp_addr: u16 },
     Return,
+    SomeInstructionThatUsesMemory { operand1: usize, operand2: usize },
 }
 
 impl Instruction {

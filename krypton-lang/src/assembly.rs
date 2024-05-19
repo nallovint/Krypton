@@ -15,8 +15,6 @@ pub enum Error {
 }
 
 impl Display for Error {
-    //noinspection ALL
-    //noinspection ALL
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -55,8 +53,6 @@ impl Display for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-//noinspection ALL
-//noinspection ALL
 pub fn klass_to_bytes(klass: &KlassBytecode) -> Result<Vec<u8>> {
     let mut bytes: Vec<u8> = Vec::new();
 
@@ -72,15 +68,11 @@ pub fn klass_to_bytes(klass: &KlassBytecode) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-//noinspection ALL
-//noinspection ALL
 fn push_magic_number(bytes: &mut Vec<u8>) {
     bytes.push(b'K');
     bytes.push(b'r');
 }
 
-//noinspection ALL
-//noinspection ALL
 fn push_version(bytes: &mut Vec<u8>, version: Version) -> Result<()> {
     bytes.push(b'V');
     let version = version.to_u8();
@@ -91,8 +83,6 @@ fn push_version(bytes: &mut Vec<u8>, version: Version) -> Result<()> {
     Ok(())
 }
 
-//noinspection ALL
-//noinspection ALL
 fn push_name(bytes: &mut Vec<u8>, name: &Option<String>) -> Result<()> {
     if let Some(name) = name {
         let Ok(len) = name.len().try_into() else {
@@ -115,8 +105,6 @@ fn push_name(bytes: &mut Vec<u8>, name: &Option<String>) -> Result<()> {
     Ok(())
 }
 
-//noinspection ALL
-//noinspection ALL
 fn push_constant_pool(bytes: &mut Vec<u8>, constant_pool: &&Vec<ConstantPoolEntry>) -> Result<()> {
     for entry in constant_pool.iter() {
         push_constant(bytes, entry)?;
@@ -124,7 +112,6 @@ fn push_constant_pool(bytes: &mut Vec<u8>, constant_pool: &&Vec<ConstantPoolEntr
     Ok(())
 }
 
-//noinspection ALL
 fn push_constant(bytes: &mut Vec<u8>, constant: &ConstantPoolEntry) -> Result<()> {
     let tag = constant.tag();
     if tag == SECTION_SEPARATOR {
@@ -133,13 +120,13 @@ fn push_constant(bytes: &mut Vec<u8>, constant: &ConstantPoolEntry) -> Result<()
     bytes.push(tag);
     match constant {
         ConstantPoolEntry::Double(value) => bytes.extend_from_slice(&value.to_be_bytes()),
+        ConstantPoolEntry::Float(value) => bytes.extend_from_slice(&value.to_be_bytes()),
+        ConstantPoolEntry::Long(value) => bytes.extend_from_slice(&value.to_be_bytes()),
         ConstantPoolEntry::Int(value) => bytes.extend_from_slice(&value.to_be_bytes()),
     }
     Ok(())
 }
 
-//noinspection ALL
-//noinspection ALL
 fn push_code(bytes: &mut Vec<u8>, code: &[Instruction]) -> Result<()> {
     for instruction in code.iter() {
         push_instruction(bytes, instruction)?;
@@ -147,8 +134,6 @@ fn push_code(bytes: &mut Vec<u8>, code: &[Instruction]) -> Result<()> {
     Ok(())
 }
 
-//noinspection ALL
-//noinspection ALL
 fn push_instruction(bytes: &mut Vec<u8>, instruction: &Instruction) -> Result<()> {
     let opcode = instruction.opcode();
     if opcode == SECTION_SEPARATOR {
@@ -163,7 +148,6 @@ fn push_instruction(bytes: &mut Vec<u8>, instruction: &Instruction) -> Result<()
     Ok(())
 }
 
-//noinspection ALL
 fn push_line_number_table(bytes: &mut Vec<u8>, line_table: &[LineNumberEntry]) -> Result<()> {
     for entry in line_table.iter() {
         push_line_number_entry(bytes, entry)?;
@@ -171,8 +155,6 @@ fn push_line_number_table(bytes: &mut Vec<u8>, line_table: &[LineNumberEntry]) -
     Ok(())
 }
 
-//noinspection ALL
-//noinspection ALL
 fn push_line_number_entry(bytes: &mut Vec<u8>, entry: &LineNumberEntry) -> Result<()> {
     // NOTE: Truncates to 2 bytes, should be removed if code section is more than 65535 bytes
     assert!(entry.start_pc <= u16::MAX as usize);
