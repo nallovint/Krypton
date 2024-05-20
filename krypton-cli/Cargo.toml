@@ -5,7 +5,5 @@ edition = "2021"
 
 [dependencies]
 krypton-lang = { path = "../krypton-lang" }
-krypton-vm = { path = "../krypton-vm", features = ["v1"] }
 clap = "4.5.4"
-simple-log = "1.6.0"
 
