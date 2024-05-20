@@ -145,6 +145,75 @@ impl Display for Value {
     }
 }
 
+impl std::ops::Neg for Value {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            Value::Double(value) => Value::Double(-value),
+            Value::Float(value) => Value::Float(-value),
+            Value::Long(value) => Value::Long(-value),
+            Value::Int(value) => Value::Int(-value),
+        }
+    }
+}
+
+impl std::ops::Add for Value {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Double(lhs), Value::Double(rhs)) => Value::Double(lhs + rhs),
+            (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs + rhs),
+            (Value::Long(lhs), Value::Long(rhs)) => Value::Long(lhs + rhs),
+            (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs + rhs),
+            _ => panic!("Invalid operands"),
+        }
+    }
+}
+
+impl std::ops::Sub for Value {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Double(lhs), Value::Double(rhs)) => Value::Double(lhs - rhs),
+            (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs - rhs),
+            (Value::Long(lhs), Value::Long(rhs)) => Value::Long(lhs - rhs),
+            (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs - rhs),
+            _ => panic!("Invalid operands"),
+        }
+    }
+}
+
+impl std::ops::Mul for Value {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Double(lhs), Value::Double(rhs)) => Value::Double(lhs * rhs),
+            (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs * rhs),
+            (Value::Long(lhs), Value::Long(rhs)) => Value::Long(lhs * rhs),
+            (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs * rhs),
+            _ => panic!("Invalid operands"),
+        }
+    }
+}
+
+impl std::ops::Div for Value {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Value::Double(lhs), Value::Double(rhs)) => Value::Double(lhs / rhs),
+            (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs / rhs),
+            (Value::Long(lhs), Value::Long(rhs)) => Value::Long(lhs / rhs),
+            (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs / rhs),
+            _ => panic!("Invalid operands"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct LineNumberEntry {
     pub start_pc: usize,
@@ -154,24 +223,57 @@ pub struct LineNumberEntry {
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum Opcode {
-    LoadConstant = 0b_0100_0011, // 'C'
-    Return = 0b_0111_0010,       // 'r'
+    LoadConstant = 0b_01000011, // 'C'
+    Return = 0b_01110010,       // 'r'
+    Negate = 0b_00100001,       // '!'
+    Add = 0b_00101011,          // '+'
+    Subtract = 0b_00101101,     // '-'
+    Multiply = 0b_00101010,     // '*'
+    Divide = 0b_00101111,       // '/'
 }
 
 impl Opcode {
     pub fn from_u8(opcode: u8) -> Result<Self> {
-        match opcode {
-            0b_0100_0011 => Ok(Opcode::LoadConstant),
-            0b_0111_0010 => Ok(Opcode::Return),
-            _ => Err(Error::UnrecognizedOpcode(opcode)),
-        }
+        Ok(match opcode {
+            0b_01000011 => Opcode::LoadConstant, // 'C'
+            0b_01110010 => Opcode::Return,       // 'r'
+            0b_00100001 => Opcode::Negate,       // '!'
+            0b_00101011 => Opcode::Add,          // '+'
+            0b_00101101 => Opcode::Subtract,     // '-'
+            0b_00101010 => Opcode::Multiply,     // '*'
+            0b_00101111 => Opcode::Divide,       // '/'
+            _ => return Err(Error::UnrecognizedOpcode(opcode)),
+        })
     }
 
-    pub fn instruction_size(&self) -> usize {
+    pub fn operands_size(&self) -> usize {
         match self {
-            Opcode::LoadConstant => 1,
+            Opcode::LoadConstant => 2,
             Opcode::Return => 0,
+            Opcode::Negate => 0,
+            Opcode::Add => 0,
+            Opcode::Subtract => 0,
+            Opcode::Multiply => 0,
+            Opcode::Divide => 0,
         }
+    }
+}
+
+impl Display for Opcode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Opcode::LoadConstant => "const",
+                Opcode::Return => "ret",
+                Opcode::Negate => "neg",
+                Opcode::Add => "add",
+                Opcode::Subtract => "sub",
+                Opcode::Multiply => "mul",
+                Opcode::Divide => "div",
+            }
+        )
     }
 }
 
@@ -179,6 +281,11 @@ impl Opcode {
 pub enum Instruction {
     LoadConstant { cp_addr: u16 },
     Return,
+    Negate,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
 }
 
 impl Instruction {
@@ -186,6 +293,11 @@ impl Instruction {
         match self {
             Instruction::LoadConstant { .. } => Opcode::LoadConstant,
             Instruction::Return => Opcode::Return,
+            Instruction::Negate => Opcode::Negate,
+            Instruction::Add => Opcode::Add,
+            Instruction::Subtract => Opcode::Subtract,
+            Instruction::Multiply => Opcode::Multiply,
+            Instruction::Divide => Opcode::Divide,
         }
     }
 
@@ -193,10 +305,13 @@ impl Instruction {
         let mut bytes = Vec::new();
         bytes.push(self.opcode() as u8);
         match self {
-            Instruction::LoadConstant { cp_addr } => {
-                bytes.extend(cp_addr.to_be_bytes());
-            }
+            Instruction::LoadConstant { cp_addr } => bytes.extend(cp_addr.to_be_bytes()),
             Instruction::Return => {}
+            Instruction::Negate => {}
+            Instruction::Add => {}
+            Instruction::Subtract => {}
+            Instruction::Multiply => {}
+            Instruction::Divide => {}
         }
         bytes
     }
@@ -210,6 +325,11 @@ impl Display for Instruction {
             match self {
                 Instruction::LoadConstant { cp_addr } => format!("const [{}]", cp_addr),
                 Instruction::Return => "ret".to_string(),
+                Instruction::Negate => "neg".to_string(),
+                Instruction::Add => "add".to_string(),
+                Instruction::Subtract => "sub".to_string(),
+                Instruction::Multiply => "mul".to_string(),
+                Instruction::Divide => "div".to_string(),
             }
         )
     }
@@ -430,20 +550,23 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
     }
 
     let instructions_start = offset;
+    debug!("Offset (init): {}", instructions_start);
     while offset < instructions_start + instructions_size as usize {
+        debug!("Offset (before): {}", offset);
         let opcode: Opcode = Opcode::from_u8(
             *bytecode
                 .get(offset)
                 .ok_or(Error::BytecodeOutOfBoundsExpectedOpcode)?,
         )?;
-        let instruction_size = opcode.instruction_size();
-        let instruction_bytes = if instruction_size == 0 {
+        debug!("Opcode: {}", opcode);
+        let operands_size = opcode.operands_size();
+        let instruction_bytes = if operands_size == 0 {
             None
         } else {
             Some(
                 bytecode
-                    .get(offset + 1..=offset + 1 + instruction_size)
-                    .ok_or(Error::BytecodeOutOfBoundsExpectedOperands(instruction_size))?,
+                    .get((offset + 1)..(offset + 1 + operands_size))
+                    .ok_or(Error::BytecodeOutOfBoundsExpectedOperands(operands_size))?,
             )
         };
         let instruction = match opcode {
@@ -451,9 +574,15 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
                 cp_addr: u16::from_be_bytes(instruction_bytes.unwrap().try_into().unwrap()),
             },
             Opcode::Return => Instruction::Return,
+            Opcode::Negate => Instruction::Negate,
+            Opcode::Add => Instruction::Add,
+            Opcode::Subtract => Instruction::Subtract,
+            Opcode::Multiply => Instruction::Multiply,
+            Opcode::Divide => Instruction::Divide,
         };
         klass.instructions.push(instruction);
-        offset += 2 + instruction_size;
+        offset += 1 + operands_size;
+        debug!("Offset (after): {}", offset);
     }
 
     Ok(klass)

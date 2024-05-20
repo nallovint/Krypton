@@ -7,11 +7,15 @@ fn main() {
         name: Some(Identifier::new("HelloWorld").unwrap()),
         version: 1,
 
-        constant_pool: vec![Value::Double(1.2), Value::Int(223)],
+        constant_pool: vec![Value::Double(1.2), Value::Double(3.4), Value::Double(5.6)],
 
         instructions: vec![
             Instruction::LoadConstant { cp_addr: 0 },
             Instruction::LoadConstant { cp_addr: 1 },
+            Instruction::Add,
+            Instruction::LoadConstant { cp_addr: 2 },
+            Instruction::Divide,
+            Instruction::Negate,
             Instruction::Return,
         ],
 

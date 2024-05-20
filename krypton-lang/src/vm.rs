@@ -71,6 +71,11 @@ impl VM {
             match instruction {
                 Instruction::LoadConstant { cp_addr } => self.load_constant(cp_addr),
                 Instruction::Return => self.return_instruction(),
+                Instruction::Negate => self.negate_value(),
+                Instruction::Add => self.add_value(),
+                Instruction::Subtract => self.subtract_value(),
+                Instruction::Multiply => self.multiply_value(),
+                Instruction::Divide => self.divide_value(),
             }
         }
         Ok(())
@@ -85,6 +90,40 @@ impl VM {
     #[inline]
     fn return_instruction(&mut self) {
         println!("{}", self.pop());
+    }
+
+    #[inline]
+    fn negate_value(&mut self) {
+        let value = self.pop();
+        self.push(-value);
+    }
+
+    #[inline]
+    fn add_value(&mut self) {
+        let b = self.pop();
+        let a = self.pop();
+        self.push(a + b);
+    }
+
+    #[inline]
+    fn subtract_value(&mut self) {
+        let b = self.pop();
+        let a = self.pop();
+        self.push(a - b);
+    }
+
+    #[inline]
+    fn multiply_value(&mut self) {
+        let b = self.pop();
+        let a = self.pop();
+        self.push(a * b);
+    }
+
+    #[inline]
+    fn divide_value(&mut self) {
+        let b = self.pop();
+        let a = self.pop();
+        self.push(a / b);
     }
 
     fn push(&mut self, value: Value) {
