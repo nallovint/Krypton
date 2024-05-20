@@ -1,15 +1,11 @@
-use clap::Command;
+use clap::{command, Command};
 
 use krypton_lang::bytecode::{BinaryDisplayExt, encode, Identifier, Instruction, Klass, LineNumberEntry, Value};
 use krypton_lang::debug;
 use krypton_lang::vm::VM;
 
 fn main() {
-    let matches = Command::new("Krypton CLI")
-        .version("0.1.0")
-        .author("Kyren223")
-        .about("Krypton is a modern programming language written in Rust.")
-        .get_matches();
+    let matches = command!().get_matches();
 }
 
 fn old_main() {

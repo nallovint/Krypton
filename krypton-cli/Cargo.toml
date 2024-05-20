@@ -14,4 +14,4 @@ rust-version = "1.71.0"
 
 [dependencies]
 krypton-lang = { path = "../krypton-lang", features = ["vm", "compiler"] }
-clap = "4.5.4"
+clap = { version = "4.5.4", features = ["default", "cargo"] }
