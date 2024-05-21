@@ -4,12 +4,19 @@ version = "0.1.0"
 description = "The Krypton programming language, including a compiler and a VM."
 authors = ["Kyren <ulmliad223@gmail.com> <Kyren223 on Discord>"]
 
-repository = "https://github.com/Kyren223/Krypton"
+repository = "https://github.com/Kyren223/Krypton/tree/master/krypton-lang"
 readme = "../README.md"
 license = "MIT"
-license-file = "../LICENSE"
 
 edition = "2021"
 rust-version = "1.71.0"
 
+[features]
+default = ["compiler", "vm"]
+compiler = []
+vm = []
+
+
 [dependencies]
+unescaper = "0.1.4"
+lexical = { version = "6.1.1", features = ["parse-floats", "parse-integers"] }

@@ -8,5 +8,9 @@ macro_rules! debug {
 }
 
 pub mod bytecode;
+
+#[cfg(feature = "compiler")]
 pub mod compiler;
+
+#[cfg(feature = "vm")]
 pub mod vm;
