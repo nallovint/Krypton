@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::exit;
 
-use clap::{arg, ArgAction, ArgGroup, command};
+use clap::{arg, command, ArgAction, ArgGroup};
 
 fn main() {
     let matches = command!()

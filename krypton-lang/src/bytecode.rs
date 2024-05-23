@@ -1,5 +1,8 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::mem::size_of;
+use std::ops::Deref;
+
+use crate::compiler::lexer::{is_identifier_continue, is_identifier_start};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Version = u8;
@@ -28,51 +31,47 @@ pub enum Error {
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Error::InvalidMagicNumber { expected, got } => format!(
-                    "Invalid magic number. Expected {} '{}', got {} '{}'",
-                    expected, *expected as char, got, *got as char,
-                ),
-                Error::IdentifierTooLong(length) => format!(
-                    "Identifier too long. Expected at most {} bytes, got {}",
-                    255, length
-                ),
-                Error::IdentifierContainsNonAsciiChar(c) =>
-                    format!("Identifier contains non-ASCII character '{}'", c),
-                Error::IdentifierContainsIllegalChar(c) =>
-                    format!("Identifier contains illegal character '{}'", c),
-                Error::IdentifierCannotBeEmpty => "Identifier cannot be empty".to_string(),
-                Error::BytecodeOutOfBoundsExpectedMagicNumber =>
-                    "Bytecode out of bounds. Expected at least 2 magic number bytes, got 0".to_string(),
-                Error::BytecodeOutOfBoundsExpectedVersion =>
-                    "Bytecode out of bounds. Expected at least 2 version bytes, got 0".to_string(),
-                Error::BytecodeOutOfBoundsExpectedNameLength =>
-                    "Bytecode out of bounds. Expected at least 1 name length byte, got 0".to_string(),
-                Error::BytecodeOutOfBoundsExpectedName(name_length) =>
-                    format!("Bytecode out of bounds. Expected {} bytes", name_length),
-                Error::BytecodeOutOfBoundsExpectedConstantPoolSize =>
-                    "Bytecode out of bounds. Expected at least 1 byte, got 0".to_string(),
-                Error::BytecodeSizeTooSmall { expected, got } => format!(
-                    "Bytecode size too small. Expected at least {} bytes, got {}",
-                    expected, got
-                ),
-                Error::InvalidTag(tag) => format!("Invalid tag: {}", tag),
-                Error::BytecodeOutOfBoundsExpectedConstantPoolEntry =>
-                    "Bytecode out of bounds. Expected at least 1 constant value byte".to_string(),
-                Error::BytecodeOutOfBoundsExpectedInstructionsSize =>
-                    "Bytecode out of bounds. Expected 8 bytes for instructions size".to_string(),
-                Error::BytecodeOutOfBoundsExpectedOpcode =>
-                    "Bytecode out of bounds. Expected at least 1 opcode byte, got 0".to_string(),
-                Error::UnrecognizedOpcode(opcode) => format!("Unrecognized opcode: {}", opcode),
-                Error::BytecodeOutOfBoundsExpectedOperands(operands) =>
-                    format!("Bytecode out of bounds. Expected {} operand bytes", operands),
-                Error::BytecodeOutOfBoundsExpectedConstantPoolValue(value) =>
-                    format!("Bytecode out of bounds. Expected {} constant value bytes", value),
-            }
-        )
+        write!(f, "{}", match self { 
+            Error::InvalidMagicNumber { expected, got } => format!(
+                "Invalid magic number. Expected {} '{}', got {} '{}'",
+                expected, *expected as char, got, *got as char,
+            ),
+            Error::IdentifierTooLong(length) => format!(
+                "Identifier too long. Expected at most {} bytes, got {}",
+                255, length
+            ),
+            Error::IdentifierContainsNonAsciiChar(c) =>
+                format!("Identifier contains non-ASCII character '{}'", c),
+            Error::IdentifierContainsIllegalChar(c) =>
+                format!("Identifier contains illegal character '{}'", c),
+            Error::IdentifierCannotBeEmpty => "Identifier cannot be empty".to_string(),
+            Error::BytecodeOutOfBoundsExpectedMagicNumber =>
+                "Bytecode out of bounds. Expected at least 2 magic number bytes, got 0".to_string(),
+            Error::BytecodeOutOfBoundsExpectedVersion =>
+                "Bytecode out of bounds. Expected at least 2 version bytes, got 0".to_string(),
+            Error::BytecodeOutOfBoundsExpectedNameLength =>
+                "Bytecode out of bounds. Expected at least 1 name length byte, got 0".to_string(),
+            Error::BytecodeOutOfBoundsExpectedName(name_length) =>
+                format!("Bytecode out of bounds. Expected {} bytes", name_length),
+            Error::BytecodeOutOfBoundsExpectedConstantPoolSize =>
+                "Bytecode out of bounds. Expected at least 1 byte, got 0".to_string(),
+            Error::BytecodeSizeTooSmall { expected, got } => format!(
+                "Bytecode size too small. Expected at least {} bytes, got {}",
+                expected, got
+            ),
+            Error::InvalidTag(tag) => format!("Invalid tag: {}", tag),
+            Error::BytecodeOutOfBoundsExpectedConstantPoolEntry =>
+                "Bytecode out of bounds. Expected at least 1 constant value byte".to_string(),
+            Error::BytecodeOutOfBoundsExpectedInstructionsSize =>
+                "Bytecode out of bounds. Expected 8 bytes for instructions size".to_string(),
+            Error::BytecodeOutOfBoundsExpectedOpcode =>
+                "Bytecode out of bounds. Expected at least 1 opcode byte, got 0".to_string(),
+            Error::UnrecognizedOpcode(opcode) => format!("Unrecognized opcode: {}", opcode),
+            Error::BytecodeOutOfBoundsExpectedOperands(operands) =>
+                format!("Bytecode out of bounds. Expected {} operand bytes", operands),
+            Error::BytecodeOutOfBoundsExpectedConstantPoolValue(value) =>
+                format!("Bytecode out of bounds. Expected {} constant value bytes", value),
+        })
     }
 }
 
@@ -136,12 +135,12 @@ impl Value {
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Value::Double(value) => write!(f, "{}", value),
-            Value::Float(value) => write!(f, "{}", value),
-            Value::Long(value) => write!(f, "{}", value),
-            Value::Int(value) => write!(f, "{}", value),
-        }
+        write!(f, "{}", match self {
+            Value::Double(value) => value.to_string(),
+            Value::Float(value) => value.to_string(),
+            Value::Long(value) => value.to_string(),
+            Value::Int(value) => value.to_string(),
+        })
     }
 }
 
@@ -261,19 +260,15 @@ impl Opcode {
 
 impl Display for Opcode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Opcode::LoadConstant => "const",
-                Opcode::Return => "ret",
-                Opcode::Negate => "neg",
-                Opcode::Add => "add",
-                Opcode::Subtract => "sub",
-                Opcode::Multiply => "mul",
-                Opcode::Divide => "div",
-            }
-        )
+        write!(f, "{}", match self { 
+            Opcode::LoadConstant => "const",
+            Opcode::Return => "ret",
+            Opcode::Negate => "neg",
+            Opcode::Add => "add",
+            Opcode::Subtract => "sub",
+            Opcode::Multiply => "mul",
+            Opcode::Divide => "div",
+        })
     }
 }
 
@@ -319,19 +314,15 @@ impl Instruction {
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Instruction::LoadConstant { cp_addr } => format!("const [{}]", cp_addr),
-                Instruction::Return => "ret".to_string(),
-                Instruction::Negate => "neg".to_string(),
-                Instruction::Add => "add".to_string(),
-                Instruction::Subtract => "sub".to_string(),
-                Instruction::Multiply => "mul".to_string(),
-                Instruction::Divide => "div".to_string(),
-            }
-        )
+        write!(f, "{}", match self {
+            Instruction::LoadConstant { cp_addr } => format!("const [{}]", cp_addr),
+            Instruction::Return => "ret".to_string(),
+            Instruction::Negate => "neg".to_string(),
+            Instruction::Add => "add".to_string(),
+            Instruction::Subtract => "sub".to_string(),
+            Instruction::Multiply => "mul".to_string(),
+            Instruction::Divide => "div".to_string(),
+        })
     }
 }
 
@@ -348,11 +339,17 @@ impl Identifier {
         if name.is_empty() {
             return Err(Error::IdentifierCannotBeEmpty);
         }
+
+        // First char
+        if !is_identifier_start(name.chars().next().expect("More than 1 character")) {
+            return Err(Error::IdentifierCannotBeEmpty);
+        }
+
         for c in name.chars() {
             if !c.is_ascii() {
                 return Err(Error::IdentifierContainsNonAsciiChar(c));
             }
-            if !(c.is_alphanumeric() || c == '_' || c == '$') {
+            if !is_identifier_continue(c) {
                 return Err(Error::IdentifierContainsIllegalChar(c));
             }
         }
@@ -609,9 +606,7 @@ impl BinaryDisplayExt for u8 {
     fn display_binary(&self) -> String {
         format!(
             "| {:08b} | {:02x}  | {:03} | '{}'  |",
-            self,
-            self,
-            self,
+            self, self, self,
             match self {
                 b' ' => ' ',
                 _ if (32..=126).contains(self) => *self as char,

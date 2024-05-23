@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use unescaper::unescape;
 
+#[derive(Debug)]
 pub enum Error {
     UnrecognizedCharacter(char),
     UnterminatedString,
@@ -12,20 +13,16 @@ pub enum Error {
 
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Error::UnrecognizedCharacter(c) => format!("Unrecognized character '{}'", c),
-                Error::UnterminatedString => "Unterminated string".to_string(),
-                Error::UnterminatedCharacter => "Unterminated character".to_string(),
-                Error::EscapeError(e) => format!("Escape error: {}", e),
-                Error::NotSingleCharacter(s, n) => format!(
-                    "Single quotes must contain only 1 character, '{}' has {} characters",
-                    s, n
-                ),
-            }
-        )
+        write!(f, "{}", match self {
+            Error::UnrecognizedCharacter(c) => format!("Unrecognized character '{}'", c),
+            Error::UnterminatedString => "Unterminated string".to_string(),
+            Error::UnterminatedCharacter => "Unterminated character".to_string(),
+            Error::EscapeError(e) => format!("Escape error: {}", e),
+            Error::NotSingleCharacter(s, n) => format!(
+                "Single quotes must contain only 1 character, '{}' has {} characters",
+                s, n
+            ),
+        })
     }
 }
 
@@ -45,7 +42,7 @@ pub enum TokenType {
     Colon,
     Slash,
     Star,
-
+    
     //One or more character tokens
     Bang,
     BangEqual,
@@ -55,14 +52,14 @@ pub enum TokenType {
     GreaterEqual,
     Less,
     LessEqual,
-
+    
     //Literals
     Identifier(String),
     String(String),
     Character(char),
     Integer(i64),
     Float(f64),
-
+    
     // Keywords
     Class,
     If,
@@ -78,8 +75,9 @@ pub enum TokenType {
     Super,
     This,
     Var,
-
-    //
+    /// [Remember to add it here too!](Lexer::create_identifier_token)
+    
+    // End of token stream
     EOF,
     Err(Error),
 }
@@ -104,65 +102,57 @@ impl Token {
 
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "'{}' ({}:{}::{})",
-            self.lexeme, self.line, self.column, self.token_type
-        )
+        write!(f, "'{}' ({}:{}::{})", self.lexeme, self.line, self.column, self.token_type)
     }
 }
 
 impl Display for TokenType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                TokenType::EOF => "EOF".to_string(),
-                TokenType::Err(error) => format!("Err({})", error),
-                TokenType::LeftParen => "(".to_string(),
-                TokenType::LeftBrace => "{".to_string(),
-                TokenType::LeftBracket => "[".to_string(),
-                TokenType::RightParen => ")".to_string(),
-                TokenType::RightBrace => "}".to_string(),
-                TokenType::RightBracket => "]".to_string(),
-                TokenType::Comma => ",".to_string(),
-                TokenType::Dot => ".".to_string(),
-                TokenType::Minus => "-".to_string(),
-                TokenType::Plus => "+".to_string(),
-                TokenType::Semicolon => ";".to_string(),
-                TokenType::Colon => ":".to_string(),
-                TokenType::Slash => "/".to_string(),
-                TokenType::Star => "*".to_string(),
-                TokenType::Bang => "!".to_string(),
-                TokenType::BangEqual => "!=".to_string(),
-                TokenType::Equal => "=".to_string(),
-                TokenType::EqualEqual => "==".to_string(),
-                TokenType::Greater => ">".to_string(),
-                TokenType::GreaterEqual => ">=".to_string(),
-                TokenType::Less => "<".to_string(),
-                TokenType::LessEqual => "<=".to_string(),
-                TokenType::Identifier(identifier) => identifier.to_string(),
-                TokenType::String(string) => format!("\"{}\"", string),
-                TokenType::Character(character) => format!("'{}'", character),
-                TokenType::Integer(integer) => integer.to_string(),
-                TokenType::Float(float) => float.to_string(),
-                TokenType::Class => "class".to_string(),
-                TokenType::If => "if".to_string(),
-                TokenType::Else => "else".to_string(),
-                TokenType::True => "true".to_string(),
-                TokenType::False => "false".to_string(),
-                TokenType::While => "while".to_string(),
-                TokenType::For => "for".to_string(),
-                TokenType::Fn => "fn".to_string(),
-                TokenType::Null => "null".to_string(),
-                TokenType::Print => "print".to_string(),
-                TokenType::Return => "return".to_string(),
-                TokenType::Super => "super".to_string(),
-                TokenType::This => "this".to_string(),
-                TokenType::Var => "var".to_string(),
-            }
-        )
+        write!(f, "{}", match self {
+            TokenType::EOF => "EOF".to_string(),
+            TokenType::Err(error) => format!("Err({})", error),
+            TokenType::LeftParen => "(".to_string(),
+            TokenType::LeftBrace => "{".to_string(),
+            TokenType::LeftBracket => "[".to_string(),
+            TokenType::RightParen => ")".to_string(),
+            TokenType::RightBrace => "}".to_string(),
+            TokenType::RightBracket => "]".to_string(),
+            TokenType::Comma => ",".to_string(),
+            TokenType::Dot => ".".to_string(),
+            TokenType::Minus => "-".to_string(),
+            TokenType::Plus => "+".to_string(),
+            TokenType::Semicolon => ";".to_string(),
+            TokenType::Colon => ":".to_string(),
+            TokenType::Slash => "/".to_string(),
+            TokenType::Star => "*".to_string(),
+            TokenType::Bang => "!".to_string(),
+            TokenType::BangEqual => "!=".to_string(),
+            TokenType::Equal => "=".to_string(),
+            TokenType::EqualEqual => "==".to_string(),
+            TokenType::Greater => ">".to_string(),
+            TokenType::GreaterEqual => ">=".to_string(),
+            TokenType::Less => "<".to_string(),
+            TokenType::LessEqual => "<=".to_string(),
+            TokenType::Identifier(identifier) => identifier.to_string(),
+            TokenType::String(string) => format!("\"{}\"", string),
+            TokenType::Character(character) => format!("'{}'", character),
+            TokenType::Integer(integer) => integer.to_string(),
+            TokenType::Float(float) => float.to_string(),
+            TokenType::Class => "class".to_string(),
+            TokenType::If => "if".to_string(),
+            TokenType::Else => "else".to_string(),
+            TokenType::True => "true".to_string(),
+            TokenType::False => "false".to_string(),
+            TokenType::While => "while".to_string(),
+            TokenType::For => "for".to_string(),
+            TokenType::Fn => "fn".to_string(),
+            TokenType::Null => "null".to_string(),
+            TokenType::Print => "print".to_string(),
+            TokenType::Return => "return".to_string(),
+            TokenType::Super => "super".to_string(),
+            TokenType::This => "this".to_string(),
+            TokenType::Var => "var".to_string(),
+        })
     }
 }
 
@@ -237,8 +227,13 @@ impl Lexer {
             '\'' => self.char_literal(),
             '0'..='9' => self.number_literal(),
 
-            // Error
-            _ => self.create_token(TokenType::Err(Error::UnrecognizedCharacter(c))),
+            _ => {
+                if is_identifier_start(c) {
+                    self.identifier(c)
+                } else {
+                    self.create_token(TokenType::Err(Error::UnrecognizedCharacter(c)))
+                }
+            }
         }
     }
 
@@ -338,22 +333,23 @@ impl Lexer {
         self.consume(); // Consume initial '\''
         let mut char_string = String::new();
         while let Some(c) = self.consume() {
-            if c == '\'' {
-                return match unescape(&char_string) {
-                    Ok(unescaped) => {
-                        if unescaped.len() != 1 {
-                            return self.create_token(TokenType::Err(Error::NotSingleCharacter(
-                                char_string,
-                                unescaped.len(),
-                            )));
-                        }
-                        let c = unescaped.chars().next().expect("Must only be one character");
-                        self.create_token(TokenType::Character(c))
-                    }
-                    Err(e) => self.create_token(TokenType::Err(Error::EscapeError(e))),
-                };
+            if c != '\'' {
+                char_string.push(c);
+                continue;
             }
-            char_string.push(c);
+            return match unescape(&char_string) {
+                Ok(unescaped) => {
+                    if unescaped.len() != 1 {
+                        return self.create_token(TokenType::Err(Error::NotSingleCharacter(
+                            char_string,
+                            unescaped.len(),
+                        )));
+                    }
+                    let c = unescaped.chars().next().expect("Must only be one character");
+                    self.create_token(TokenType::Character(c))
+                }
+                Err(e) => self.create_token(TokenType::Err(Error::EscapeError(e))),
+            };
         }
 
         self.create_token(TokenType::Err(Error::UnterminatedCharacter))
@@ -370,7 +366,40 @@ impl Lexer {
             }
         }
 
-        self.create_token(TokenType::Err(Error::UnterminatedNumber))
+        self.create_token(TokenType::Integer(number_string.parse().unwrap()))
+    }
+
+    fn identifier(&mut self, start: char) -> Option<Token> {
+        let mut identifier = String::new();
+        identifier.push(start);
+        while let Some(c) = self.consume() {
+            if is_identifier_continue(c) {
+                identifier.push(c);
+            } else {
+                return self.create_identifier_token(&identifier);
+            }
+        }
+        self.create_token(TokenType::Identifier(identifier))
+    }
+
+    fn create_identifier_token(&self, identifier: &str) -> Option<Token> {
+        match identifier {
+            "class" => self.create_token(TokenType::Class),
+            "if" => self.create_token(TokenType::If),
+            "else" => self.create_token(TokenType::Else),
+            "true" => self.create_token(TokenType::True),
+            "false" => self.create_token(TokenType::False),
+            "while" => self.create_token(TokenType::While),
+            "for" => self.create_token(TokenType::For),
+            "fn" => self.create_token(TokenType::Fn),
+            "null" => self.create_token(TokenType::Null),
+            "print" => self.create_token(TokenType::Print),
+            "return" => self.create_token(TokenType::Return),
+            "super" => self.create_token(TokenType::Super),
+            "this" => self.create_token(TokenType::This),
+            "var" => self.create_token(TokenType::Var),
+            _ => self.create_token(TokenType::Identifier(identifier.to_string())),
+        }
     }
 }
 
@@ -380,4 +409,12 @@ impl Iterator for Lexer {
     fn next(&mut self) -> Option<Self::Item> {
         self.scan_token()
     }
+}
+
+pub fn is_identifier_start(c: char) -> bool {
+    c.is_ascii_alphabetic() || c == '_'
+}
+
+pub fn is_identifier_continue(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '$'
 }
