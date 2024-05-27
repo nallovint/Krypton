@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::ops::Deref;
 
 use unescaper::unescape;
 
@@ -9,6 +10,19 @@ pub enum Error {
     UnterminatedCharacter,
     EscapeError(unescaper::Error),
     NotSingleCharacter(String, usize),
+}
+
+impl PartialEq for Error {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Error::UnrecognizedCharacter(_), Error::UnrecognizedCharacter(_))
+                | (Error::UnterminatedString, Error::UnterminatedString)
+                | (Error::UnterminatedCharacter, Error::UnterminatedCharacter)
+                | (Error::EscapeError(_), Error::EscapeError(_))
+                | (Error::NotSingleCharacter(..), Error::NotSingleCharacter(..))
+        )
+    }
 }
 
 impl Display for Error {
@@ -26,6 +40,32 @@ impl Display for Error {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct TokenStream(Vec<Token>);
+
+impl Deref for TokenStream {
+    type Target = Vec<Token>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for TokenStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{\n{}\n}}",
+            self.0
+                .iter()
+                .map(|token| format!("  {}", token))
+                .collect::<Vec<String>>()
+                .join("\n")
+        )
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum TokenType {
     // Single-character tokens
     LeftParen,
@@ -42,7 +82,7 @@ pub enum TokenType {
     Colon,
     Slash,
     Star,
-    
+
     //One or more character tokens
     Bang,
     BangEqual,
@@ -52,14 +92,14 @@ pub enum TokenType {
     GreaterEqual,
     Less,
     LessEqual,
-    
+
     //Literals
     Identifier(String),
     String(String),
     Character(char),
     Integer(i64),
     Float(f64),
-    
+
     // Keywords
     Class,
     If,
@@ -76,12 +116,76 @@ pub enum TokenType {
     This,
     Var,
     /// [Remember to add it here too!](Lexer::create_identifier_token)
-    
     // End of token stream
     EOF,
     Err(Error),
 }
 
+impl TokenType {
+    pub fn to_enum_string(&self) -> &'static str {
+        match self {
+            TokenType::LeftParen => "LeftParen",
+            TokenType::RightParen => "RightParen",
+            TokenType::LeftBrace => "LeftBrace",
+            TokenType::RightBrace => "RightBrace",
+            TokenType::LeftBracket => "LeftBracket",
+            TokenType::RightBracket => "RightBracket",
+            TokenType::Comma => "Comma",
+            TokenType::Dot => "Dot",
+            TokenType::Minus => "Minus",
+            TokenType::Plus => "Plus",
+            TokenType::Semicolon => "Semicolon",
+            TokenType::Colon => "Colon",
+            TokenType::Slash => "Slash",
+            TokenType::Star => "Star",
+            TokenType::Bang => "Bang",
+            TokenType::BangEqual => "BangEqual",
+            TokenType::Equal => "Equal",
+            TokenType::EqualEqual => "EqualEqual",
+            TokenType::Greater => "Greater",
+            TokenType::GreaterEqual => "GreaterEqual",
+            TokenType::Less => "Less",
+            TokenType::LessEqual => "LessEqual",
+            TokenType::Identifier(_) => "Identifier",
+            TokenType::String(_) => "String",
+            TokenType::Character(_) => "Character",
+            TokenType::Integer(_) => "Integer",
+            TokenType::Float(_) => "Float",
+            TokenType::Class => "Class",
+            TokenType::If => "If",
+            TokenType::Else => "Else",
+            TokenType::True => "True",
+            TokenType::False => "False",
+            TokenType::While => "While",
+            TokenType::For => "For",
+            TokenType::Fn => "Fn",
+            TokenType::Null => "Null",
+            TokenType::Print => "Print",
+            TokenType::Return => "Return",
+            TokenType::Super => "Super",
+            TokenType::This => "This",
+            TokenType::Var => "Var",
+            TokenType::EOF => "EOF",
+            TokenType::Err(_) => "Err",
+        }
+    }
+}
+
+impl Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            TokenType::Err(e) => e.to_string(),
+            TokenType::Identifier(id) => id.to_string(),
+            TokenType::String(s) => s.to_string(),
+            TokenType::Character(c) => c.to_string(),
+            TokenType::Integer(i) => i.to_string(),
+            TokenType::Float(f) => f.to_string(),
+            _ => self.to_enum_string().to_string(),
+        })
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,
@@ -102,57 +206,15 @@ impl Token {
 
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "'{}' ({}:{}::{})", self.lexeme, self.line, self.column, self.token_type)
-    }
-}
-
-impl Display for TokenType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            TokenType::EOF => "EOF".to_string(),
-            TokenType::Err(error) => format!("Err({})", error),
-            TokenType::LeftParen => "(".to_string(),
-            TokenType::LeftBrace => "{".to_string(),
-            TokenType::LeftBracket => "[".to_string(),
-            TokenType::RightParen => ")".to_string(),
-            TokenType::RightBrace => "}".to_string(),
-            TokenType::RightBracket => "]".to_string(),
-            TokenType::Comma => ",".to_string(),
-            TokenType::Dot => ".".to_string(),
-            TokenType::Minus => "-".to_string(),
-            TokenType::Plus => "+".to_string(),
-            TokenType::Semicolon => ";".to_string(),
-            TokenType::Colon => ":".to_string(),
-            TokenType::Slash => "/".to_string(),
-            TokenType::Star => "*".to_string(),
-            TokenType::Bang => "!".to_string(),
-            TokenType::BangEqual => "!=".to_string(),
-            TokenType::Equal => "=".to_string(),
-            TokenType::EqualEqual => "==".to_string(),
-            TokenType::Greater => ">".to_string(),
-            TokenType::GreaterEqual => ">=".to_string(),
-            TokenType::Less => "<".to_string(),
-            TokenType::LessEqual => "<=".to_string(),
-            TokenType::Identifier(identifier) => identifier.to_string(),
-            TokenType::String(string) => format!("\"{}\"", string),
-            TokenType::Character(character) => format!("'{}'", character),
-            TokenType::Integer(integer) => integer.to_string(),
-            TokenType::Float(float) => float.to_string(),
-            TokenType::Class => "class".to_string(),
-            TokenType::If => "if".to_string(),
-            TokenType::Else => "else".to_string(),
-            TokenType::True => "true".to_string(),
-            TokenType::False => "false".to_string(),
-            TokenType::While => "while".to_string(),
-            TokenType::For => "for".to_string(),
-            TokenType::Fn => "fn".to_string(),
-            TokenType::Null => "null".to_string(),
-            TokenType::Print => "print".to_string(),
-            TokenType::Return => "return".to_string(),
-            TokenType::Super => "super".to_string(),
-            TokenType::This => "this".to_string(),
-            TokenType::Var => "var".to_string(),
-        })
+        write!(
+            f,
+            "{}:{:02} {:<12} {:<25} # {}",
+            self.line,
+            self.column,
+            format!("{}: ", self.token_type.to_enum_string()),
+            format!("'{}'", self.lexeme),
+            self.token_type
+        )
     }
 }
 
@@ -177,12 +239,12 @@ impl Lexer {
         }
     }
 
-    pub fn scan_token_stream(&mut self) -> Vec<Token> {
+    pub fn scan_token_stream(&mut self) -> TokenStream {
         let mut tokens = Vec::new();
         while let Some(token) = self.scan_token() {
             tokens.push(token);
         }
-        tokens
+        TokenStream(tokens)
     }
 
     pub fn scan_token(&mut self) -> Option<Token> {
@@ -192,12 +254,20 @@ impl Lexer {
 
         self.skip_whitespace();
 
+        debug!("Skipped whitespace");
+
         self.start = self.current;
+
+        debug!("Start: {:?}", self.start);
+        debug!("Current: {:?}", self.current);
+        debug!("Peek: {:?}", self.peek());
 
         let Some(c) = self.consume() else {
             self.stop = true;
             return self.create_token(TokenType::EOF);
         };
+
+        debug!("C: {c}");
 
         match c {
             // Single-character tokens
@@ -225,13 +295,13 @@ impl Lexer {
             // Literals
             '"' => self.string_literal(),
             '\'' => self.char_literal(),
-            '0'..='9' => self.number_literal(),
+            '0'..='9' => self.number_literal(c),
 
             _ => {
                 if is_identifier_start(c) {
                     self.identifier(c)
                 } else {
-                    self.create_token(TokenType::Err(Error::UnrecognizedCharacter(c)))
+                    self.create_error_token(Error::UnrecognizedCharacter(c))
                 }
             }
         }
@@ -245,7 +315,12 @@ impl Lexer {
     fn consume(&mut self) -> Option<char> {
         let c = self.peek()?;
         self.current += 1;
-        self.column += 1;
+        if c == '\n' {
+            self.line += 1;
+            self.column = 0;
+        } else {
+            self.column += 1;
+        }
         Some(c)
     }
 
@@ -270,38 +345,34 @@ impl Lexer {
         loop {
             let Some(c) = self.peek() else { return };
             match c {
-                ' ' | '\t' | '\r' => {
+                ' ' | '\t' | '\r' | '\n' => {
+                    debug!("Skipping whitespace, C: {c}");
                     self.consume();
-                }
-                '\n' => {
-                    self.consume();
-                    self.line += 1;
-                    self.column = 0;
                 }
                 '/' => {
+                    debug!("Skipping whitespace, C: {c}");
                     let Some(next_c) = self.peek_next() else { return };
                     if next_c == '/' {
-                        self.consume();
-                        self.consume();
-                        while let Some(c) = self.peek() {
+                        debug!("Single line comment Next Peek: {:?}", next_c);
+                        self.consume(); // First '/'
+                        self.consume(); // Second '/'
+                        'inner: while let Some(c) = self.peek() {
+                            debug!("Multiline comment Peek: {:?}", c);
                             self.consume();
                             if c == '\n' {
-                                self.line += 1;
-                                self.column = 0;
-                                break;
+                                break 'inner;
                             }
                         }
                     } else if next_c == '*' {
-                        self.consume();
-                        self.consume();
-                        while let Some(c) = self.peek() {
+                        debug!("Multiline comment Next Peek: {:?}", next_c);
+                        self.consume(); // '/'
+                        self.consume(); // '*'
+                        'inner: while let Some(c) = self.peek() {
+                            debug!("Multiline comment Peek: {:?}", c);
                             self.consume();
-                            if c == '\n' {
-                                self.line += 1;
-                                self.column = 0;
-                            } else if c == '*' && self.peek_next() == Some('/') {
-                                self.consume();
-                                break;
+                            if c == '*' && self.peek() == Some('/') {
+                                self.consume(); // Consumes '/'
+                                break 'inner;
                             }
                         }
                     } else {
@@ -314,66 +385,99 @@ impl Lexer {
     }
 
     fn string_literal(&mut self) -> Option<Token> {
-        self.consume(); // Consume initial '"'
         let mut string = String::new();
+        let mut escape_next = false;
         while let Some(c) = self.consume() {
-            if c == '"' {
-                return match unescape(&string) {
-                    Ok(unescaped) => self.create_token(TokenType::String(unescaped)),
-                    Err(e) => self.create_token(TokenType::Err(Error::EscapeError(e))),
-                };
+            if c != '"' || escape_next {
+                // This is a bit of a hack to allow `"` to be escaped
+                // if it has a `\` before it
+                // The !escape_next check makes sure that if char is a backslash
+                // And the previous char is also a backslash
+                // Then the next char should not be escaped
+                // "\\" - Without it, the last `"` would be escaped, and it'll cause
+                // an error
+                escape_next = !escape_next && c == '\\';
+                string.push(c);
+                continue;
             }
-            string.push(c);
+            return match unescape(&string) {
+                Ok(unescaped) => self.create_token(TokenType::String(unescaped)),
+                Err(e) => self.create_error_token(Error::EscapeError(e)),
+            };
         }
 
-        self.create_token(TokenType::Err(Error::UnterminatedString))
+        self.create_error_token(Error::UnterminatedString)
     }
 
     fn char_literal(&mut self) -> Option<Token> {
-        self.consume(); // Consume initial '\''
         let mut char_string = String::new();
+        let mut escape_next = false;
         while let Some(c) = self.consume() {
-            if c != '\'' {
+            if c != '\'' || escape_next {
+                // This is a bit of a hack to allow `'` to be escaped
+                // if it has a `\` before it
+                // The !escape_next check makes sure that if char is a backslash
+                // And the previous char is also a backslash
+                // Then the next char should not be escaped
+                // '\\' - Without it, the last `'` would be escaped, and it'll cause
+                // an error
+                escape_next = !escape_next && c == '\\';
                 char_string.push(c);
                 continue;
             }
+            debug!("Char literal: |{}|", char_string);
             return match unescape(&char_string) {
                 Ok(unescaped) => {
-                    if unescaped.len() != 1 {
-                        return self.create_token(TokenType::Err(Error::NotSingleCharacter(
-                            char_string,
-                            unescaped.len(),
-                        )));
+                    debug!("Unescaped: |{}|", unescaped);
+                    // unescaped.len() return amount of bytes, not chars,
+                    // so we need to use chars().count()
+                    if unescaped.chars().count() != 1 {
+                        return self.create_error_token(Error::NotSingleCharacter(char_string, unescaped.len()));
                     }
                     let c = unescaped.chars().next().expect("Must only be one character");
                     self.create_token(TokenType::Character(c))
                 }
-                Err(e) => self.create_token(TokenType::Err(Error::EscapeError(e))),
+                Err(e) => self.create_error_token(Error::EscapeError(e)),
             };
         }
 
-        self.create_token(TokenType::Err(Error::UnterminatedCharacter))
+        self.create_error_token(Error::UnterminatedCharacter)
     }
 
-    fn number_literal(&mut self) -> Option<Token> {
-        self.consume(); // Consume initial '0'
+    fn number_literal(&mut self, initial_digit: char) -> Option<Token> {
+        // TODO: Use library "lexical" to parse numbers to allow for rust-like
+        // syntax for floats and integers
         let mut number_string = String::new();
-        while let Some(c) = self.consume() {
-            if c.is_ascii_digit() {
+        number_string.push(initial_digit);
+        while let Some(c) = self.peek() {
+            if c.is_ascii_digit() || c == '.' {
+                self.consume();
                 number_string.push(c);
-            } else {
-                return self.create_token(TokenType::Integer(number_string.parse().unwrap()));
+                continue;
             }
+            return self.create_number_token(number_string);
         }
 
-        self.create_token(TokenType::Integer(number_string.parse().unwrap()))
+        self.create_number_token(number_string)
+    }
+
+    fn create_number_token(&self, number_string: String) -> Option<Token> {
+        let float = number_string.parse::<f64>();
+        let int = number_string.parse::<i64>();
+
+        match (float, int) {
+            (Ok(f), Err(_)) => self.create_token(TokenType::Float(f)),
+            (_, Ok(i)) => self.create_token(TokenType::Integer(i)),
+            _ => panic!("Unexpected number: {}", number_string),
+        }
     }
 
     fn identifier(&mut self, start: char) -> Option<Token> {
         let mut identifier = String::new();
         identifier.push(start);
-        while let Some(c) = self.consume() {
+        while let Some(c) = self.peek() {
             if is_identifier_continue(c) {
+                self.consume(); // Consume the character
                 identifier.push(c);
             } else {
                 return self.create_identifier_token(&identifier);
@@ -401,6 +505,11 @@ impl Lexer {
             _ => self.create_token(TokenType::Identifier(identifier.to_string())),
         }
     }
+
+    fn create_error_token(&mut self, error: Error) -> Option<Token> {
+        self.stop = true;
+        self.create_token(TokenType::Err(error))
+    }
 }
 
 impl Iterator for Lexer {
@@ -417,4 +526,125 @@ pub fn is_identifier_start(c: char) -> bool {
 
 pub fn is_identifier_continue(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_' || c == '$'
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_is_identifier_start() {
+        assert!(is_identifier_start('a'));
+        assert!(is_identifier_start('G'));
+        assert!(is_identifier_start('z'));
+        assert!(is_identifier_start('_'));
+
+        assert!(!is_identifier_start('$'));
+        assert!(!is_identifier_start(' '));
+        assert!(!is_identifier_start('0'));
+        assert!(!is_identifier_start('-'));
+        assert!(!is_identifier_start('!'));
+        assert!(!is_identifier_start('@'));
+        assert!(!is_identifier_start('\0'));
+    }
+
+    #[test]
+    fn test_is_identifier_continue() {
+        assert!(is_identifier_continue('a'));
+        assert!(is_identifier_continue('G'));
+        assert!(is_identifier_continue('z'));
+        assert!(is_identifier_continue('_'));
+        assert!(is_identifier_continue('$'));
+        assert!(is_identifier_continue('0'));
+        assert!(is_identifier_continue('5'));
+        assert!(is_identifier_continue('9'));
+
+        assert!(!is_identifier_continue(' '));
+        assert!(!is_identifier_continue('-'));
+        assert!(!is_identifier_continue('!'));
+        assert!(!is_identifier_continue('@'));
+        assert!(!is_identifier_continue('\0'));
+    }
+
+    macro_rules! lexing_tests {
+        ($($name:ident: $value:expr,)*) => {$(
+            #[test]
+            fn $name() {
+                let (input, expected) = $value;
+                let tokens = Lexer::new(input).scan_token_stream();
+                println!("{}", tokens);
+
+                for (i, t) in tokens.iter().enumerate() {
+                    assert_eq!(t.token_type, expected[i]);
+                }
+            }
+        )*}
+    }
+
+    lexing_tests! {
+        test_basic_case: ("a", vec![
+            TokenType::Identifier("a".to_string()),
+            TokenType::EOF,
+        ]),
+
+        test_simple_example: (r#"class Hello { fn sayHello() { print("Hello\n\tWorld!" + 11.7 / 2); } }"#, vec![
+            TokenType::Class,
+            TokenType::Identifier("Hello".to_string()),
+            TokenType::LeftBrace,
+            TokenType::Fn,
+            TokenType::Identifier("sayHello".to_string()),
+            TokenType::LeftParen,
+            TokenType::RightParen,
+            TokenType::LeftBrace,
+            TokenType::Print,
+            TokenType::LeftParen,
+            TokenType::String("Hello\n\tWorld!".to_string()),
+            TokenType::Plus,
+            TokenType::Float(11.7),
+            TokenType::Slash,
+            TokenType::Integer(2),
+            TokenType::RightParen,
+            TokenType::Semicolon,
+            TokenType::RightBrace,
+            TokenType::RightBrace,
+            TokenType::EOF,
+        ]),
+
+        test_unicode_chars: (r#"class Hello { fn sayHello() {שלום print("Hello\n\tWorld!" + 11.7 / 2); } }"#, vec![
+            TokenType::Class,
+            TokenType::Identifier("Hello".to_string()),
+            TokenType::LeftBrace,
+            TokenType::Fn,
+            TokenType::Identifier("sayHello".to_string()),
+            TokenType::LeftParen,
+            TokenType::RightParen,
+            TokenType::LeftBrace,
+            TokenType::Err(Error::UnrecognizedCharacter('ש')),
+        ]),
+
+        test_comments_and_char_literals: (
+            &r#" // Test%n /'H' '\'' 'ל' '\\' /* Some text %n %n with stuff */ '\0' '\n' '\u{2990}' '\\\\'"#
+            .replace("%n", "\n"),
+            vec![
+                TokenType::Slash,
+                TokenType::Character('H'),
+                TokenType::Character('\''),
+                TokenType::Character('ל'),
+                TokenType::Character('\\'),
+                TokenType::Character('\0'),
+                TokenType::Character('\n'),
+                TokenType::Character('\u{2990}'),
+                TokenType::Err(Error::NotSingleCharacter(r#"\\"#.to_string(), 2)),
+            ]
+        ),
+        test_strings: (r#""Hello\n\tWorld!" "'c'" "ל" "\\" "\"Quote\"" "\\\"" "#, vec![
+            TokenType::String("Hello\n\tWorld!".to_string()),
+            TokenType::String("'c'".to_string()),
+            TokenType::String("ל".to_string()),
+            TokenType::String("\\".to_string()),
+            TokenType::String("\"Quote\"".to_string()),
+            TokenType::String("\\\"".to_string()),
+            TokenType::EOF,
+        ]),
+    }
 }

@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::exit;
 
-use clap::{arg, command, ArgAction, ArgGroup};
+use clap::{arg, ArgAction, ArgGroup, command};
 
 fn main() {
     let matches = command!()
@@ -20,7 +20,7 @@ fn main() {
         .get_matches();
 
     if matches.contains_id("file") {
-        let input = matches.get_one::<String>("file").unwrap();
+        let input = matches.get_one::<String>("file").expect("Main: No file specified");
         run_file(input);
     } else if matches.contains_id("repl") {
         repl();

@@ -1,10 +1,10 @@
 edition = "2021"
-max_width = 114
+max_width = 116
 overflow_delimited_expr = true
 version = "Two"
 empty_item_single_line = false
-license_template_path = "LICENSE"
 wrap_comments = true
 comment_width = 70
+
 
 

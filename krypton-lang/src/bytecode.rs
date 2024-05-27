@@ -1,8 +1,6 @@
+use crate::compiler::lexer::{is_identifier_continue, is_identifier_start};
 use std::fmt::{Debug, Display, Formatter};
 use std::mem::size_of;
-use std::ops::Deref;
-
-use crate::compiler::lexer::{is_identifier_continue, is_identifier_start};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Version = u8;
@@ -31,7 +29,7 @@ pub enum Error {
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self { 
+        write!(f, "{}", match self {
             Error::InvalidMagicNumber { expected, got } => format!(
                 "Invalid magic number. Expected {} '{}', got {} '{}'",
                 expected, *expected as char, got, *got as char,
@@ -42,8 +40,7 @@ impl Display for Error {
             ),
             Error::IdentifierContainsNonAsciiChar(c) =>
                 format!("Identifier contains non-ASCII character '{}'", c),
-            Error::IdentifierContainsIllegalChar(c) =>
-                format!("Identifier contains illegal character '{}'", c),
+            Error::IdentifierContainsIllegalChar(c) => format!("Identifier contains illegal character '{}'", c),
             Error::IdentifierCannotBeEmpty => "Identifier cannot be empty".to_string(),
             Error::BytecodeOutOfBoundsExpectedMagicNumber =>
                 "Bytecode out of bounds. Expected at least 2 magic number bytes, got 0".to_string(),
@@ -260,7 +257,7 @@ impl Opcode {
 
 impl Display for Opcode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self { 
+        write!(f, "{}", match self {
             Opcode::LoadConstant => "const",
             Opcode::Return => "ret",
             Opcode::Negate => "neg",
@@ -606,7 +603,9 @@ impl BinaryDisplayExt for u8 {
     fn display_binary(&self) -> String {
         format!(
             "| {:08b} | {:02x}  | {:03} | '{}'  |",
-            self, self, self,
+            self,
+            self,
+            self,
             match self {
                 b' ' => ' ',
                 _ if (32..=126).contains(self) => *self as char,

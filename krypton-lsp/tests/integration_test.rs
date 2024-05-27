@@ -1,2 +1,3 @@
 #[test]
-fn test() {}
+fn test() {
+}
