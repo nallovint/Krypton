@@ -43,6 +43,21 @@ impl Display for Error {
 #[derive(Debug, PartialEq)]
 pub struct TokenStream(Vec<Token>);
 
+impl IntoIterator for TokenStream {
+    type Item = Token;
+    type IntoIter = std::vec::IntoIter<Token>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl From<Vec<Token>> for TokenStream {
+    fn from(tokens: Vec<Token>) -> Self {
+        Self(tokens)
+    }
+}
+
 impl Deref for TokenStream {
     type Target = Vec<Token>;
 
@@ -83,7 +98,7 @@ pub enum TokenType {
     Slash,
     Star,
 
-    //One or more character tokens
+    // One or more character tokens
     Bang,
     BangEqual,
     Equal,
@@ -93,7 +108,7 @@ pub enum TokenType {
     Less,
     LessEqual,
 
-    //Literals
+    // Literals
     Identifier(String),
     String(String),
     Character(char),
@@ -101,6 +116,7 @@ pub enum TokenType {
     Float(f64),
 
     // Keywords
+    /// [Add keywords to here too!](Lexer::create_identifier_token)
     Class,
     If,
     Else,
@@ -115,9 +131,9 @@ pub enum TokenType {
     Super,
     This,
     Var,
-    /// [Remember to add it here too!](Lexer::create_identifier_token)
+
     // End of token stream
-    EOF,
+    Eof,
     Err(Error),
 }
 
@@ -165,7 +181,7 @@ impl TokenType {
             TokenType::Super => "Super",
             TokenType::This => "This",
             TokenType::Var => "Var",
-            TokenType::EOF => "EOF",
+            TokenType::Eof => "EOF",
             TokenType::Err(_) => "Err",
         }
     }
@@ -202,6 +218,15 @@ impl Token {
             column,
         }
     }
+
+    pub fn dummy() -> Self {
+        Self {
+            token_type: TokenType::Eof,
+            lexeme: "".to_string(),
+            line: 0,
+            column: 0,
+        }
+    }
 }
 
 impl Display for Token {
@@ -218,6 +243,7 @@ impl Display for Token {
     }
 }
 
+#[derive(Debug)]
 pub struct Lexer {
     source: Vec<char>,
     start: usize,
@@ -239,7 +265,7 @@ impl Lexer {
         }
     }
 
-    pub fn scan_token_stream(&mut self) -> TokenStream {
+    pub fn scan_token_stream(mut self) -> TokenStream {
         let mut tokens = Vec::new();
         while let Some(token) = self.scan_token() {
             tokens.push(token);
@@ -264,7 +290,7 @@ impl Lexer {
 
         let Some(c) = self.consume() else {
             self.stop = true;
-            return self.create_token(TokenType::EOF);
+            return self.create_token(TokenType::Eof);
         };
 
         debug!("C: {c}");
@@ -507,7 +533,6 @@ impl Lexer {
     }
 
     fn create_error_token(&mut self, error: Error) -> Option<Token> {
-        self.stop = true;
         self.create_token(TokenType::Err(error))
     }
 }
@@ -584,7 +609,7 @@ mod tests {
     lexing_tests! {
         test_basic_case: ("a", vec![
             TokenType::Identifier("a".to_string()),
-            TokenType::EOF,
+            TokenType::Eof,
         ]),
 
         test_simple_example: (r#"class Hello { fn sayHello() { print("Hello\n\tWorld!" + 11.7 / 2); } }"#, vec![
@@ -607,7 +632,7 @@ mod tests {
             TokenType::Semicolon,
             TokenType::RightBrace,
             TokenType::RightBrace,
-            TokenType::EOF,
+            TokenType::Eof,
         ]),
 
         test_unicode_chars: (r#"class Hello { fn sayHello() {שלום print("Hello\n\tWorld!" + 11.7 / 2); } }"#, vec![
@@ -620,6 +645,21 @@ mod tests {
             TokenType::RightParen,
             TokenType::LeftBrace,
             TokenType::Err(Error::UnrecognizedCharacter('ש')),
+            TokenType::Err(Error::UnrecognizedCharacter('ל')),
+            TokenType::Err(Error::UnrecognizedCharacter('ו')),
+            TokenType::Err(Error::UnrecognizedCharacter('ם')),
+            TokenType::Print,
+            TokenType::LeftParen,
+            TokenType::String("Hello\n\tWorld!".to_string()),
+            TokenType::Plus,
+            TokenType::Float(11.7),
+            TokenType::Slash,
+            TokenType::Integer(2),
+            TokenType::RightParen,
+            TokenType::Semicolon,
+            TokenType::RightBrace,
+            TokenType::RightBrace,
+            TokenType::Eof,
         ]),
 
         test_comments_and_char_literals: (
@@ -635,6 +675,7 @@ mod tests {
                 TokenType::Character('\n'),
                 TokenType::Character('\u{2990}'),
                 TokenType::Err(Error::NotSingleCharacter(r#"\\"#.to_string(), 2)),
+                TokenType::Eof,
             ]
         ),
         test_strings: (r#""Hello\n\tWorld!" "'c'" "ל" "\\" "\"Quote\"" "\\\"" "#, vec![
@@ -644,7 +685,7 @@ mod tests {
             TokenType::String("\\".to_string()),
             TokenType::String("\"Quote\"".to_string()),
             TokenType::String("\\\"".to_string()),
-            TokenType::EOF,
+            TokenType::Eof,
         ]),
     }
 }

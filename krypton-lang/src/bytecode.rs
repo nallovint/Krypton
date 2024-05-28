@@ -1,6 +1,7 @@
-use crate::compiler::lexer::{is_identifier_continue, is_identifier_start};
 use std::fmt::{Debug, Display, Formatter};
 use std::mem::size_of;
+
+use crate::compiler::lex::{is_identifier_continue, is_identifier_start};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Version = u8;
@@ -34,12 +35,9 @@ impl Display for Error {
                 "Invalid magic number. Expected {} '{}', got {} '{}'",
                 expected, *expected as char, got, *got as char,
             ),
-            Error::IdentifierTooLong(length) => format!(
-                "Identifier too long. Expected at most {} bytes, got {}",
-                255, length
-            ),
-            Error::IdentifierContainsNonAsciiChar(c) =>
-                format!("Identifier contains non-ASCII character '{}'", c),
+            Error::IdentifierTooLong(length) =>
+                format!("Identifier too long. Expected at most {} bytes, got {}", 255, length),
+            Error::IdentifierContainsNonAsciiChar(c) => format!("Identifier contains non-ASCII character '{}'", c),
             Error::IdentifierContainsIllegalChar(c) => format!("Identifier contains illegal character '{}'", c),
             Error::IdentifierCannotBeEmpty => "Identifier cannot be empty".to_string(),
             Error::BytecodeOutOfBoundsExpectedMagicNumber =>
@@ -350,9 +348,7 @@ impl Identifier {
                 return Err(Error::IdentifierContainsIllegalChar(c));
             }
         }
-        Ok(Self {
-            name: name.to_string(),
-        })
+        Ok(Self { name: name.to_string() })
     }
 
     pub fn new_unchecked(name: String) -> Self {
@@ -403,7 +399,7 @@ pub struct Klass {
     pub version: Version,
     pub constant_pool: Vec<Value>,
     pub instructions: Vec<Instruction>,
-    pub line_number_table: Option<Vec<LineNumberEntry>>,
+    pub line_number_table: Vec<LineNumberEntry>,
 }
 
 const MAGIC_NUMBER: [u8; 3] = [b'K', b'r', b'V'];
@@ -459,9 +455,7 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
     // Metadata
     #[allow(clippy::needless_range_loop)]
     for i in 0..3 {
-        let magic_number = *bytecode
-            .get(i)
-            .ok_or(Error::BytecodeOutOfBoundsExpectedMagicNumber)?;
+        let magic_number = *bytecode.get(i).ok_or(Error::BytecodeOutOfBoundsExpectedMagicNumber)?;
         if magic_number != MAGIC_NUMBER[i] {
             return Err(Error::InvalidMagicNumber {
                 expected: MAGIC_NUMBER[i],
@@ -547,11 +541,8 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
     debug!("Offset (init): {}", instructions_start);
     while offset < instructions_start + instructions_size as usize {
         debug!("Offset (before): {}", offset);
-        let opcode: Opcode = Opcode::from_u8(
-            *bytecode
-                .get(offset)
-                .ok_or(Error::BytecodeOutOfBoundsExpectedOpcode)?,
-        )?;
+        let opcode: Opcode =
+            Opcode::from_u8(*bytecode.get(offset).ok_or(Error::BytecodeOutOfBoundsExpectedOpcode)?)?;
         debug!("Opcode: {}", opcode);
         let operands_size = opcode.operands_size();
         let instruction_bytes = if operands_size == 0 {
@@ -601,17 +592,11 @@ impl BinaryDisplayExt for &[u8] {
 
 impl BinaryDisplayExt for u8 {
     fn display_binary(&self) -> String {
-        format!(
-            "| {:08b} | {:02x}  | {:03} | '{}'  |",
-            self,
-            self,
-            self,
-            match self {
-                b' ' => ' ',
-                _ if (32..=126).contains(self) => *self as char,
-                _ => '�',
-            }
-        )
+        format!("| {:08b} | {:02x}  | {:03} | '{}'  |", self, self, self, match self {
+            b' ' => ' ',
+            _ if (32..=126).contains(self) => *self as char,
+            _ => '�',
+        })
     }
 }
 
