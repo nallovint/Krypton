@@ -5,10 +5,21 @@ use crate::compiler::parse::Parser;
 pub mod lex;
 pub mod parse;
 
-type Result<T> = std::result::Result<T, parse::Error>;
+type Result<T> = parse::Result<T>;
 
 pub fn compile(input: &str) -> Result<Klass> {
     let lexer = Lexer::new(input);
     let parser = Parser::from(lexer);
-    parser.parse()
+    let klass = parser.parse()?;
+    debug!("{}", dump(&klass));
+    Ok(klass)
+}
+
+pub fn dump(klass: &Klass) -> String {
+    let mut formatted = String::new();
+    formatted.push_str("Instructions:\n");
+    for instruction in &klass.instructions {
+        formatted.push_str(&format!("{}\n", instruction));
+    }
+    formatted
 }
