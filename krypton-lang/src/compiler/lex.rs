@@ -556,7 +556,7 @@ pub fn is_identifier_continue(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_is_identifier_start() {
         assert!(is_identifier_start('a'));

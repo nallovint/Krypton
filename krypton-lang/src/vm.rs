@@ -37,10 +37,13 @@ pub struct VM {
 
 impl VM {
     pub fn new() -> Self {
-        let stack: [MaybeUninit<Value>; MAX_STACK_SIZE as usize] =
-            [MaybeUninit::uninit(); MAX_STACK_SIZE as usize];
+        let stack: [MaybeUninit<Value>; MAX_STACK_SIZE as usize] = [MaybeUninit::uninit(); MAX_STACK_SIZE as usize];
         Self {
-            stack: unsafe { mem::transmute(stack) },
+            stack: unsafe {
+                mem::transmute::<[MaybeUninit<Value>; MAX_STACK_SIZE as usize], [Value; MAX_STACK_SIZE as usize]>(
+                    stack,
+                )
+            },
             klass: Default::default(),
             ip: 0,
             sp: 0,
