@@ -12,14 +12,12 @@ env:
 jobs:
 
   build:
-    runs-on: ubuntu-latest
-
     strategy:
       matrix:
-        toolchain:
-          - stable
-          - beta
-          - nightly
+        toolchain: [ stable, nightly ]
+        os: [ ubuntu-latest, windows-latest ]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -35,12 +33,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchains
-        run: rustup update stable && rustup update nightly && rustup default stable
-      - name: Install nightly for clippy & rustfmt
-        run: rustup component add clippy rustfmt
+      - name: Install Rust toolchain
+        run: rustup update nightly
+      - name: Install nightly versions of clippy & rustfmt
+        run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu rustfmt clippy
       - name: Check formatting
         run: cargo +nightly fmt -- --check
       - name: Check clippy
-        run: cargo +nightly clippy -- -D warnings
+        run: "cargo +nightly clippy --all-targets --all-features -- 
+                                                                -D warnings 
+                                                                -W clippy::pedantic 
+                                                                -W clippy::nursery 
+                                                                -W clippy::cargo 
+                                                                -W clippy:unwrap_used"
 
