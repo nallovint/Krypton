@@ -2,20 +2,23 @@
 name = "krypton-lang"
 version = "0.1.0"
 description = "The Krypton programming language, including a compiler and a VM."
-authors = ["Kyren <ulmliad223@gmail.com> <Kyren223 on Discord>"]
+keywords = ["language", "compiler", "vm", "krypton"]
+categories = ["compilers", "virtualization", "parser-implementations"]
 
-repository = "https://github.com/Kyren223/Krypton/tree/master/krypton-lang"
-readme = "../README.md"
-license = "MIT"
+repository.workspace = true
+authors.workspace = true
+readme.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
-edition = "2021"
-rust-version = "1.71.0"
+[lints]
+workspace = true
 
 [features]
 default = ["compiler", "vm"]
 compiler = []
 vm = []
-
 
 [dependencies]
 unescaper = "0.1.4"

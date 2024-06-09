@@ -2,14 +2,18 @@
 name = "krypton-cli"
 version = "0.1.0"
 description = "A CLI for the Krypton programming language."
-authors = ["Kyren <ulmliad223@gmail.com> <Kyren223 on Discord>"]
+keywords = ["cli", "krypton", "compiler", "vm", "command-line"]
+categories = ["command-line-utilities", "command-line-interface"]
 
-repository = "https://github.com/Kyren223/Krypton/tree/master/krypton-cli"
-readme = "../README.md"
-license = "MIT"
+repository.workspace = true
+authors.workspace = true
+readme.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
-edition = "2021"
-rust-version = "1.71.0"
+[lints]
+workspace = true
 
 [dependencies]
 krypton-lang = { path = "../krypton-lang", features = ["vm", "compiler"] }

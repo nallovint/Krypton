@@ -7,6 +7,7 @@ pub mod parse;
 
 type Result<T> = parse::Result<T>;
 
+#[allow(clippy::missing_errors_doc)]
 pub fn compile(input: &str) -> Result<Klass> {
     let lexer = Lexer::new(input);
     let parser = Parser::from(lexer);
@@ -15,11 +16,12 @@ pub fn compile(input: &str) -> Result<Klass> {
     Ok(klass)
 }
 
+#[must_use]
 pub fn dump(klass: &Klass) -> String {
     let mut formatted = String::new();
     formatted.push_str("Instructions:\n");
     for instruction in &klass.instructions {
-        formatted.push_str(&format!("{}\n", instruction));
+        formatted.push_str(&format!("{instruction}\n"));
     }
     formatted
 }

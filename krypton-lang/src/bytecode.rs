@@ -4,6 +4,7 @@ use std::mem::size_of;
 use crate::compiler::lex::{is_identifier_continue, is_identifier_start};
 
 pub type Result<T> = std::result::Result<T, Error>;
+pub type InstructionsLength = u32;
 pub type Version = u8;
 
 #[derive(Debug)]
@@ -31,41 +32,39 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
-            Error::InvalidMagicNumber { expected, got } => format!(
+            Self::InvalidMagicNumber { expected, got } => format!(
                 "Invalid magic number. Expected {} '{}', got {} '{}'",
                 expected, *expected as char, got, *got as char,
             ),
-            Error::IdentifierTooLong(length) =>
+            Self::IdentifierTooLong(length) =>
                 format!("Identifier too long. Expected at most {} bytes, got {}", 255, length),
-            Error::IdentifierContainsNonAsciiChar(c) => format!("Identifier contains non-ASCII character '{}'", c),
-            Error::IdentifierContainsIllegalChar(c) => format!("Identifier contains illegal character '{}'", c),
-            Error::IdentifierCannotBeEmpty => "Identifier cannot be empty".to_string(),
+            Self::IdentifierContainsNonAsciiChar(c) => format!("Identifier contains non-ASCII character '{c}'"),
+            Self::IdentifierContainsIllegalChar(c) => format!("Identifier contains illegal character '{c}'"),
+            Self::IdentifierCannotBeEmpty => "Identifier cannot be empty".to_owned(),
             Error::BytecodeOutOfBoundsExpectedMagicNumber =>
-                "Bytecode out of bounds. Expected at least 2 magic number bytes, got 0".to_string(),
+                "Bytecode out of bounds. Expected at least 2 magic number bytes, got 0".to_owned(),
             Error::BytecodeOutOfBoundsExpectedVersion =>
-                "Bytecode out of bounds. Expected at least 2 version bytes, got 0".to_string(),
+                "Bytecode out of bounds. Expected at least 2 version bytes, got 0".to_owned(),
             Error::BytecodeOutOfBoundsExpectedNameLength =>
-                "Bytecode out of bounds. Expected at least 1 name length byte, got 0".to_string(),
+                "Bytecode out of bounds. Expected at least 1 name length byte, got 0".to_owned(),
             Error::BytecodeOutOfBoundsExpectedName(name_length) =>
-                format!("Bytecode out of bounds. Expected {} bytes", name_length),
+                format!("Bytecode out of bounds. Expected {name_length} bytes"),
             Error::BytecodeOutOfBoundsExpectedConstantPoolSize =>
-                "Bytecode out of bounds. Expected at least 1 byte, got 0".to_string(),
-            Error::BytecodeSizeTooSmall { expected, got } => format!(
-                "Bytecode size too small. Expected at least {} bytes, got {}",
-                expected, got
-            ),
-            Error::InvalidTag(tag) => format!("Invalid tag: {}", tag),
+                "Bytecode out of bounds. Expected at least 1 byte, got 0".to_owned(),
+            Error::BytecodeSizeTooSmall { expected, got } =>
+                format!("Bytecode size too small. Expected at least {expected} bytes, got {got}",),
+            Error::InvalidTag(tag) => format!("Invalid tag: {tag}"),
             Error::BytecodeOutOfBoundsExpectedConstantPoolEntry =>
-                "Bytecode out of bounds. Expected at least 1 constant value byte".to_string(),
+                "Bytecode out of bounds. Expected at least 1 constant value byte".to_owned(),
             Error::BytecodeOutOfBoundsExpectedInstructionsSize =>
-                "Bytecode out of bounds. Expected 8 bytes for instructions size".to_string(),
+                "Bytecode out of bounds. Expected 8 bytes for instructions size".to_owned(),
             Error::BytecodeOutOfBoundsExpectedOpcode =>
-                "Bytecode out of bounds. Expected at least 1 opcode byte, got 0".to_string(),
-            Error::UnrecognizedOpcode(opcode) => format!("Unrecognized opcode: {}", opcode),
+                "Bytecode out of bounds. Expected at least 1 opcode byte, got 0".to_owned(),
+            Error::UnrecognizedOpcode(opcode) => format!("Unrecognized opcode: {opcode}"),
             Error::BytecodeOutOfBoundsExpectedOperands(operands) =>
-                format!("Bytecode out of bounds. Expected {} operand bytes", operands),
+                format!("Bytecode out of bounds. Expected {operands} operand bytes"),
             Error::BytecodeOutOfBoundsExpectedConstantPoolValue(value) =>
-                format!("Bytecode out of bounds. Expected {} constant value bytes", value),
+                format!("Bytecode out of bounds. Expected {value} constant value bytes"),
         })
     }
 }
@@ -80,7 +79,8 @@ pub enum Tag {
 }
 
 impl Tag {
-    pub fn from_u8(tag: u8) -> Result<Self> {
+    #[allow(clippy::missing_errors_doc)]
+    pub const fn from_u8(tag: u8) -> Result<Self> {
         match tag {
             0b_0100_0110 => Ok(Tag::Double),
             0b_0110_0110 => Ok(Tag::Float),
@@ -90,12 +90,11 @@ impl Tag {
         }
     }
 
-    pub fn entry_size(&self) -> usize {
+    #[must_use]
+    pub const fn entry_size(&self) -> usize {
         match self {
-            Tag::Double => 8,
-            Tag::Float => 4,
-            Tag::Long => 8,
-            Tag::Int => 4,
+            Tag::Double | Tag::Long => 8,
+            Tag::Float | Tag::Int => 4,
         }
     }
 }
@@ -109,7 +108,8 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn tag(&self) -> Tag {
+    #[must_use]
+    pub const fn tag(&self) -> Tag {
         match self {
             Value::Double(_) => Tag::Double,
             Value::Float(_) => Tag::Float,
@@ -118,6 +118,7 @@ impl Value {
         }
     }
 
+    #[must_use]
     pub fn to_be_bytes(&self) -> Vec<u8> {
         match self {
             Value::Double(value) => value.to_be_bytes().to_vec(),
@@ -227,7 +228,8 @@ pub enum Opcode {
 }
 
 impl Opcode {
-    pub fn from_u8(opcode: u8) -> Result<Self> {
+    #[allow(clippy::missing_errors_doc)]
+    pub const fn from_u8(opcode: u8) -> Result<Self> {
         Ok(match opcode {
             0b_01000011 => Opcode::LoadConstant, // 'C'
             0b_01110010 => Opcode::Return,       // 'r'
@@ -240,15 +242,16 @@ impl Opcode {
         })
     }
 
-    pub fn operands_size(&self) -> usize {
+    #[must_use]
+    pub const fn operands_size(&self) -> usize {
         match self {
             Opcode::LoadConstant => 2,
-            Opcode::Return => 0,
-            Opcode::Negate => 0,
-            Opcode::Add => 0,
-            Opcode::Subtract => 0,
-            Opcode::Multiply => 0,
-            Opcode::Divide => 0,
+            Opcode::Return
+            | Opcode::Negate
+            | Opcode::Add
+            | Opcode::Subtract
+            | Opcode::Multiply
+            | Opcode::Divide => 0,
         }
     }
 }
@@ -279,7 +282,8 @@ pub enum Instruction {
 }
 
 impl Instruction {
-    pub fn opcode(&self) -> Opcode {
+    #[must_use]
+    pub const fn opcode(&self) -> Opcode {
         match self {
             Instruction::LoadConstant { .. } => Opcode::LoadConstant,
             Instruction::Return => Opcode::Return,
@@ -291,17 +295,18 @@ impl Instruction {
         }
     }
 
+    #[must_use]
     pub fn to_be_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.push(self.opcode() as u8);
         match self {
             Instruction::LoadConstant { cp_addr } => bytes.extend(cp_addr.to_be_bytes()),
-            Instruction::Return => {}
-            Instruction::Negate => {}
-            Instruction::Add => {}
-            Instruction::Subtract => {}
-            Instruction::Multiply => {}
-            Instruction::Divide => {}
+            Instruction::Return
+            | Instruction::Negate
+            | Instruction::Add
+            | Instruction::Subtract
+            | Instruction::Multiply
+            | Instruction::Divide => {}
         }
         bytes
     }
@@ -310,13 +315,13 @@ impl Instruction {
 impl Display for Instruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
-            Instruction::LoadConstant { cp_addr } => format!("const [{}]", cp_addr),
-            Instruction::Return => "ret".to_string(),
-            Instruction::Negate => "neg".to_string(),
-            Instruction::Add => "add".to_string(),
-            Instruction::Subtract => "sub".to_string(),
-            Instruction::Multiply => "mul".to_string(),
-            Instruction::Divide => "div".to_string(),
+            Instruction::LoadConstant { cp_addr } => format!("const [{cp_addr}]"),
+            Instruction::Return => "ret".to_owned(),
+            Instruction::Negate => "neg".to_owned(),
+            Instruction::Add => "add".to_owned(),
+            Instruction::Subtract => "sub".to_owned(),
+            Instruction::Multiply => "mul".to_owned(),
+            Instruction::Divide => "div".to_owned(),
         })
     }
 }
@@ -327,6 +332,8 @@ pub struct Identifier {
 }
 
 impl Identifier {
+    #[allow(clippy::missing_errors_doc)]
+    #[allow(clippy::missing_panics_doc)]
     pub fn new(name: &str) -> Result<Self> {
         if name.len() > 255 {
             return Err(Error::IdentifierTooLong(name.len()));
@@ -348,26 +355,31 @@ impl Identifier {
                 return Err(Error::IdentifierContainsIllegalChar(c));
             }
         }
-        Ok(Self { name: name.to_string() })
+        Ok(Self { name: name.to_owned() })
     }
 
-    pub fn new_unchecked(name: String) -> Self {
+    #[must_use]
+    pub const fn new_unchecked(name: String) -> Self {
         Self { name }
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.name
     }
 
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn len(&self) -> u8 {
-        assert!((1..=255).contains(&self.name.len()));
-        self.name.len() as u8
+        u8::try_from(self.name.len()).expect("Invalid Identifier, must be between 1 and 255 bytes")
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.name.is_empty()
     }
 
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         self.name.as_bytes()
     }
@@ -406,7 +418,9 @@ const MAGIC_NUMBER: [u8; 3] = [b'K', b'r', b'V'];
 const VERSION_OFFSET: usize = 2;
 const NAME_LENGTH_OFFSET: usize = 4;
 
+#[must_use]
 #[allow(clippy::vec_init_then_push)]
+#[allow(clippy::missing_panics_doc)]
 pub fn encode(klass: &Klass) -> Vec<u8> {
     let mut bytecode = Vec::new();
 
@@ -429,18 +443,18 @@ pub fn encode(klass: &Klass) -> Vec<u8> {
     for constant_pool_entry in &klass.constant_pool {
         constant_pool.push(constant_pool_entry.tag() as u8);
         let value_bytes = constant_pool_entry.to_be_bytes();
-        constant_pool_size += 1 + value_bytes.len() as u16;
+        constant_pool_size += 1 + u16::try_from(value_bytes.len()).expect("Invalid constant pool entry");
         constant_pool.extend(value_bytes);
     }
     bytecode.extend(constant_pool_size.to_be_bytes());
     bytecode.extend(constant_pool);
 
     // Instructions
-    let mut instructions_size: u64 = 0;
+    let mut instructions_size: InstructionsLength = 0;
     let mut instructions = Vec::new();
     for instruction in &klass.instructions {
         let instruction_bytes = instruction.to_be_bytes();
-        instructions_size += instruction_bytes.len() as u64;
+        instructions_size += InstructionsLength::try_from(instruction_bytes.len()).expect("Invalid length");
         instructions.extend(instruction_bytes);
     }
     bytecode.extend(instructions_size.to_be_bytes());
@@ -449,25 +463,36 @@ pub fn encode(klass: &Klass) -> Vec<u8> {
     bytecode
 }
 
-pub fn decode(bytecode: &[u8]) -> Result<Klass> {
-    let mut klass = Klass::default();
-
-    // Metadata
-    #[allow(clippy::needless_range_loop)]
-    for i in 0..3 {
-        let magic_number = *bytecode.get(i).ok_or(Error::BytecodeOutOfBoundsExpectedMagicNumber)?;
-        if magic_number != MAGIC_NUMBER[i] {
+macro_rules! cmp_magic_byte {
+    ($bytecode:expr, $i:expr) => {
+        let magic_number = *$bytecode
+            .get($i)
+            .ok_or(Error::BytecodeOutOfBoundsExpectedMagicNumber)?;
+        if magic_number != MAGIC_NUMBER[$i] {
             return Err(Error::InvalidMagicNumber {
-                expected: MAGIC_NUMBER[i],
+                expected: MAGIC_NUMBER[$i],
                 got: magic_number,
             });
         }
-    }
+    };
+}
 
+#[allow(clippy::missing_errors_doc)]
+#[allow(clippy::missing_panics_doc)]
+pub fn decode(bytecode: &[u8]) -> Result<Klass> {
+    let mut klass = Klass::default();
+
+    // Magic number
+    cmp_magic_byte!(bytecode, 0);
+    cmp_magic_byte!(bytecode, 1);
+
+    // Version
+    cmp_magic_byte!(bytecode, 2);
     klass.version = *bytecode
         .get(VERSION_OFFSET)
         .ok_or(Error::BytecodeOutOfBoundsExpectedVersion)?;
 
+    // Name
     let name_length = *bytecode
         .get(NAME_LENGTH_OFFSET)
         .ok_or(Error::BytecodeOutOfBoundsExpectedNameLength)?;
@@ -490,6 +515,7 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
     if constant_pool_size.len() != size_of::<u16>() {
         return Err(Error::BytecodeOutOfBoundsExpectedConstantPoolSize);
     }
+    #[allow(clippy::unwrap_used)]
     let constant_pool_size = u16::from_be_bytes(constant_pool_size.try_into().unwrap());
 
     offset += size_of::<u16>();
@@ -511,6 +537,7 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
         let entry_bytes = bytecode
             .get(offset + 1..offset + 1 + entry_size)
             .ok_or(Error::BytecodeOutOfBoundsExpectedConstantPoolValue(entry_size))?;
+        #[allow(clippy::unwrap_used)]
         let entry = match tag {
             Tag::Double => Value::Double(f64::from_be_bytes(entry_bytes.try_into().unwrap())),
             Tag::Float => Value::Float(f32::from_be_bytes(entry_bytes.try_into().unwrap())),
@@ -522,14 +549,15 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
     }
 
     let instructions_size = bytecode
-        .get(offset..offset + size_of::<u64>())
+        .get(offset..offset + size_of::<InstructionsLength>())
         .ok_or(Error::BytecodeOutOfBoundsExpectedInstructionsSize)?;
-    if instructions_size.len() != size_of::<u64>() {
+    if instructions_size.len() != size_of::<InstructionsLength>() {
         return Err(Error::BytecodeOutOfBoundsExpectedInstructionsSize);
     }
-    let instructions_size = u64::from_be_bytes(instructions_size.try_into().unwrap());
+    #[allow(clippy::unwrap_used)]
+    let instructions_size = InstructionsLength::from_be_bytes(instructions_size.try_into().unwrap());
 
-    offset += size_of::<u64>();
+    offset += size_of::<InstructionsLength>();
     if (bytecode.len() - offset) < instructions_size as usize {
         return Err(Error::BytecodeSizeTooSmall {
             expected: instructions_size as usize,
@@ -554,9 +582,10 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
                     .ok_or(Error::BytecodeOutOfBoundsExpectedOperands(operands_size))?,
             )
         };
+        #[allow(clippy::unwrap_used)]
         let instruction = match opcode {
             Opcode::LoadConstant => Instruction::LoadConstant {
-                cp_addr: u16::from_be_bytes(instruction_bytes.unwrap().try_into().unwrap()),
+                cp_addr: u16::from_be_bytes(instruction_bytes.expect("2-bytes long operand").try_into().unwrap()),
             },
             Opcode::Return => Instruction::Return,
             Opcode::Negate => Instruction::Negate,
@@ -583,7 +612,7 @@ impl BinaryDisplayExt for &[u8] {
             "|  Binary  | Hex | Dec | Char |\n{}\n{}\n",
             "-".repeat(31),
             self.iter()
-                .map(|byte| byte.display_binary())
+                .map(BinaryDisplayExt::display_binary)
                 .collect::<Vec<String>>()
                 .join("\n")
         )

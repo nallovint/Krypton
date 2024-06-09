@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use std::ops::Deref;
+use std::vec;
 
 use unescaper::unescape;
 
@@ -28,14 +29,12 @@ impl PartialEq for Error {
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
-            Error::UnrecognizedCharacter(c) => format!("Unrecognized character '{}'", c),
-            Error::UnterminatedString => "Unterminated string".to_string(),
-            Error::UnterminatedCharacter => "Unterminated character".to_string(),
-            Error::EscapeError(e) => format!("Escape error: {}", e),
-            Error::NotSingleCharacter(s, n) => format!(
-                "Single quotes must contain only 1 character, '{}' has {} characters",
-                s, n
-            ),
+            Error::UnrecognizedCharacter(c) => format!("Unrecognized character '{c}'"),
+            Error::UnterminatedString => "Unterminated string".to_owned(),
+            Error::UnterminatedCharacter => "Unterminated character".to_owned(),
+            Error::EscapeError(e) => format!("Escape error: {e}"),
+            Error::NotSingleCharacter(s, n) =>
+                format!("Single quotes must contain only 1 character, '{s}' has {n} characters",),
         })
     }
 }
@@ -45,7 +44,7 @@ pub struct TokenStream(Vec<Token>);
 
 impl IntoIterator for TokenStream {
     type Item = Token;
-    type IntoIter = std::vec::IntoIter<Token>;
+    type IntoIter = vec::IntoIter<Token>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -73,7 +72,7 @@ impl Display for TokenStream {
             "{{\n{}\n}}",
             self.0
                 .iter()
-                .map(|token| format!("  {}", token))
+                .map(|token| format!("  {token}"))
                 .collect::<Vec<String>>()
                 .join("\n")
         )
@@ -138,7 +137,8 @@ pub enum TokenType {
 }
 
 impl TokenType {
-    pub fn to_enum_string(&self) -> &'static str {
+    #[must_use]
+    pub const fn to_enum_string(&self) -> &'static str {
         match self {
             TokenType::LeftParen => "LeftParen",
             TokenType::RightParen => "RightParen",
@@ -196,7 +196,7 @@ impl Display for TokenType {
             TokenType::Character(c) => c.to_string(),
             TokenType::Integer(i) => i.to_string(),
             TokenType::Float(f) => f.to_string(),
-            _ => self.to_enum_string().to_string(),
+            _ => self.to_enum_string().to_owned(),
         })
     }
 }
@@ -210,7 +210,8 @@ pub struct Token {
 }
 
 impl Token {
-    pub fn new(token_type: TokenType, lexeme: String, line: u16, column: u16) -> Self {
+    #[must_use]
+    pub const fn new(token_type: TokenType, lexeme: String, line: u16, column: u16) -> Self {
         Self {
             token_type,
             lexeme,
@@ -219,10 +220,11 @@ impl Token {
         }
     }
 
+    #[must_use]
     pub fn dummy() -> Self {
         Self {
             token_type: TokenType::Eof,
-            lexeme: "".to_string(),
+            lexeme: String::new(),
             line: 0,
             column: 0,
         }
@@ -254,6 +256,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
+    #[must_use]
     pub fn new(source: &str) -> Self {
         Self {
             source: source.chars().collect(),
@@ -265,6 +268,7 @@ impl Lexer {
         }
     }
 
+    #[must_use]
     pub fn scan_token_stream(mut self) -> TokenStream {
         let mut tokens = Vec::new();
         while let Some(token) = self.scan_token() {
@@ -333,8 +337,9 @@ impl Lexer {
         }
     }
 
+    #[must_use]
     fn create_token(&self, token_type: TokenType) -> Option<Token> {
-        let lexeme = self.source[self.start..self.current].iter().collect::<String>();
+        let lexeme = self.source.get(self.start..self.current)?.iter().collect::<String>();
         Some(Token::new(token_type, lexeme, self.line, self.column))
     }
 
@@ -481,20 +486,20 @@ impl Lexer {
                 number_string.push(c);
                 continue;
             }
-            return self.create_number_token(number_string);
+            return self.create_number_token(&number_string);
         }
 
-        self.create_number_token(number_string)
+        self.create_number_token(&number_string)
     }
 
-    fn create_number_token(&self, number_string: String) -> Option<Token> {
+    fn create_number_token(&self, number_string: &str) -> Option<Token> {
         let float = number_string.parse::<f64>();
         let int = number_string.parse::<i64>();
 
         match (float, int) {
             (Ok(f), Err(_)) => self.create_token(TokenType::Float(f)),
             (_, Ok(i)) => self.create_token(TokenType::Integer(i)),
-            _ => panic!("Unexpected number: {}", number_string),
+            _ => panic!("Unexpected number: {number_string}"),
         }
     }
 
@@ -528,11 +533,11 @@ impl Lexer {
             "super" => self.create_token(TokenType::Super),
             "this" => self.create_token(TokenType::This),
             "var" => self.create_token(TokenType::Var),
-            _ => self.create_token(TokenType::Identifier(identifier.to_string())),
+            _ => self.create_token(TokenType::Identifier(identifier.to_owned())),
         }
     }
 
-    fn create_error_token(&mut self, error: Error) -> Option<Token> {
+    fn create_error_token(&self, error: Error) -> Option<Token> {
         self.create_token(TokenType::Err(error))
     }
 }
@@ -545,18 +550,20 @@ impl Iterator for Lexer {
     }
 }
 
-pub fn is_identifier_start(c: char) -> bool {
+#[must_use]
+pub const fn is_identifier_start(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '_'
 }
 
-pub fn is_identifier_continue(c: char) -> bool {
+#[must_use]
+pub const fn is_identifier_continue(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_' || c == '$'
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    
     #[test]
     fn test_is_identifier_start() {
         assert!(is_identifier_start('a'));
@@ -593,6 +600,7 @@ mod tests {
 
     macro_rules! lexing_tests {
         ($($name:ident: $value:expr,)*) => {$(
+            #[allow(clippy::indexing_slicing)]
             #[test]
             fn $name() {
                 let (input, expected) = $value;
@@ -608,22 +616,22 @@ mod tests {
 
     lexing_tests! {
         test_basic_case: ("a", vec![
-            TokenType::Identifier("a".to_string()),
+            TokenType::Identifier("a".to_owned()),
             TokenType::Eof,
         ]),
 
         test_simple_example: (r#"class Hello { fn sayHello() { print("Hello\n\tWorld!" + 11.7 / 2); } }"#, vec![
             TokenType::Class,
-            TokenType::Identifier("Hello".to_string()),
+            TokenType::Identifier("Hello".to_owned()),
             TokenType::LeftBrace,
             TokenType::Fn,
-            TokenType::Identifier("sayHello".to_string()),
+            TokenType::Identifier("sayHello".to_owned()),
             TokenType::LeftParen,
             TokenType::RightParen,
             TokenType::LeftBrace,
             TokenType::Print,
             TokenType::LeftParen,
-            TokenType::String("Hello\n\tWorld!".to_string()),
+            TokenType::String("Hello\n\tWorld!".to_owned()),
             TokenType::Plus,
             TokenType::Float(11.7),
             TokenType::Slash,
@@ -637,10 +645,10 @@ mod tests {
 
         test_unicode_chars: (r#"class Hello { fn sayHello() {שלום print("Hello\n\tWorld!" + 11.7 / 2); } }"#, vec![
             TokenType::Class,
-            TokenType::Identifier("Hello".to_string()),
+            TokenType::Identifier("Hello".to_owned()),
             TokenType::LeftBrace,
             TokenType::Fn,
-            TokenType::Identifier("sayHello".to_string()),
+            TokenType::Identifier("sayHello".to_owned()),
             TokenType::LeftParen,
             TokenType::RightParen,
             TokenType::LeftBrace,
@@ -650,7 +658,7 @@ mod tests {
             TokenType::Err(Error::UnrecognizedCharacter('ם')),
             TokenType::Print,
             TokenType::LeftParen,
-            TokenType::String("Hello\n\tWorld!".to_string()),
+            TokenType::String("Hello\n\tWorld!".to_owned()),
             TokenType::Plus,
             TokenType::Float(11.7),
             TokenType::Slash,
@@ -663,7 +671,7 @@ mod tests {
         ]),
 
         test_comments_and_char_literals: (
-            &r#" // Test%n /'H' '\'' 'ל' '\\' /* Some text %n %n with stuff */ '\0' '\n' '\u{2990}' '\\\\'"#
+            &r" // Test%n /'H' '\'' 'ל' '\\' /* Some text %n %n with stuff */ '\0' '\n' '\u{2990}' '\\\\'"
             .replace("%n", "\n"),
             vec![
                 TokenType::Slash,
@@ -674,17 +682,17 @@ mod tests {
                 TokenType::Character('\0'),
                 TokenType::Character('\n'),
                 TokenType::Character('\u{2990}'),
-                TokenType::Err(Error::NotSingleCharacter(r#"\\"#.to_string(), 2)),
+                TokenType::Err(Error::NotSingleCharacter(r"\\".to_owned(), 2)),
                 TokenType::Eof,
             ]
         ),
         test_strings: (r#""Hello\n\tWorld!" "'c'" "ל" "\\" "\"Quote\"" "\\\"" "#, vec![
-            TokenType::String("Hello\n\tWorld!".to_string()),
-            TokenType::String("'c'".to_string()),
-            TokenType::String("ל".to_string()),
-            TokenType::String("\\".to_string()),
-            TokenType::String("\"Quote\"".to_string()),
-            TokenType::String("\\\"".to_string()),
+            TokenType::String("Hello\n\tWorld!".to_owned()),
+            TokenType::String("'c'".to_owned()),
+            TokenType::String("ל".to_owned()),
+            TokenType::String("\\".to_owned()),
+            TokenType::String("\"Quote\"".to_owned()),
+            TokenType::String("\\\"".to_owned()),
             TokenType::Eof,
         ]),
     }

@@ -2,8 +2,8 @@ use std::cmp::PartialOrd;
 use std::mem;
 use std::ops::Add;
 
-use crate::bytecode::Instruction::LoadConstant;
 use crate::bytecode::{Instruction, Klass, LineNumberEntry, Value};
+use crate::bytecode::Instruction::LoadConstant;
 use crate::compiler::lex::{Token, TokenStream, TokenType};
 
 pub type Result<T> = std::result::Result<T, Vec<Error>>;
@@ -45,6 +45,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         }
     }
 
+    #[allow(clippy::missing_errors_doc)]
     pub fn parse(mut self) -> Result<Klass> {
         self.advance()?; // Immediately parse the dummy token
         self.expression()?;
@@ -89,16 +90,13 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         Err(vec![Error::UnexpectedToken {
             got: mem::replace(&mut self.current, Token::dummy()),
             expected: token_type,
-            message: expected.to_string(),
+            message: expected.to_owned(),
         }])
     }
 
     fn emit_instruction(&mut self, instruction: Instruction, line: u16) {
         let previous = self.klass.line_number_table.last();
-        let add_entry = match previous {
-            Some(entry) => entry.line_number != line,
-            None => true,
-        };
+        let add_entry = previous.map_or(true, |entry| entry.line_number != line);
 
         if add_entry {
             self.klass.line_number_table.push(LineNumberEntry {
@@ -114,6 +112,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     // =======================================================================
 
     fn emit_constant(&mut self, value: Value) -> u16 {
+        #[allow(clippy::cast_possible_truncation)]
         let cp_addr = self.klass.constant_pool.len() as u16;
         self.klass.constant_pool.push(value);
         cp_addr
@@ -175,12 +174,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         match prev.token_type {
             TokenType::LeftParen => self.grouping()?,
             TokenType::Minus => self.unary()?,
-            TokenType::Integer(_) => self.number(),
-            TokenType::Float(_) => self.number(),
+            TokenType::Integer(_) | TokenType::Float(_) => self.number(),
             _ => {
                 return Err(vec![Error::ExpectedExpression {
                     got: prev,
-                    message: "Expected expression".to_string(),
+                    message: "Expected expression".to_owned(),
                 }]);
             }
         }
@@ -200,7 +198,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 _ => {
                     return Err(vec![Error::ExpectedExpression {
                         got: prev,
-                        message: "Expected expression".to_string(),
+                        message: "Expected expression".to_owned(),
                     }]);
                 }
             }
@@ -224,21 +222,18 @@ impl<I: Iterator<Item = Token>> From<I> for Parser<I> {
 
 fn value_from_token(token_type: &TokenType) -> Value {
     match token_type {
-        TokenType::Integer(value) => {
-            if (i32::MIN as i64..=i32::MAX as i64).contains(value) {
-                Value::Int(*value as i32)
-            } else {
-                Value::Long(*value)
-            }
-        }
+        TokenType::Integer(value) => i32::try_from(*value).map_or(Value::Long(*value), Value::Int),
         TokenType::Float(value) => {
-            if (f32::MIN as f64..=f32::MAX as f64).contains(value) {
-                Value::Float(*value as f32)
+            #[allow(clippy::cast_possible_truncation)]
+            let f32_value = *value as f32;
+            #[allow(clippy::float_cmp)]
+            if f32_value as f64 == *value {
+                Value::Float(f32_value)
             } else {
                 Value::Double(*value)
             }
         }
-        _ => panic!("Unsupported token type: {:?}", token_type),
+        _ => panic!("Unsupported token type: {token_type:?}"),
     }
 }
 
@@ -261,51 +256,49 @@ pub enum Precedence {
 }
 
 impl Precedence {
-    fn from_token(token_type: &TokenType) -> Self {
+    const fn from_token(token_type: &TokenType) -> Self {
         match token_type {
-            TokenType::LeftParen => Precedence::None,
-            TokenType::RightParen => Precedence::None,
-            TokenType::LeftBrace => Precedence::None,
-            TokenType::RightBrace => Precedence::None,
-            TokenType::LeftBracket => Precedence::None,
-            TokenType::RightBracket => Precedence::None,
-            TokenType::Comma => Precedence::None,
-            TokenType::Dot => Precedence::None,
-            TokenType::Minus => Precedence::Term,
-            TokenType::Plus => Precedence::Term,
-            TokenType::Semicolon => Precedence::None,
-            TokenType::Colon => Precedence::None,
-            TokenType::Slash => Precedence::Factor,
-            TokenType::Star => Precedence::Factor,
-            TokenType::Bang => Precedence::None,
-            TokenType::BangEqual => Precedence::None,
-            TokenType::Equal => Precedence::None,
-            TokenType::EqualEqual => Precedence::None,
-            TokenType::Greater => Precedence::None,
-            TokenType::GreaterEqual => Precedence::None,
-            TokenType::Less => Precedence::None,
-            TokenType::LessEqual => Precedence::None,
-            TokenType::Identifier(_) => Precedence::None,
-            TokenType::String(_) => Precedence::None,
-            TokenType::Character(_) => Precedence::None,
-            TokenType::Integer(_) => Precedence::None,
-            TokenType::Float(_) => Precedence::None,
-            TokenType::Class => Precedence::None,
-            TokenType::If => Precedence::None,
-            TokenType::Else => Precedence::None,
-            TokenType::True => Precedence::None,
-            TokenType::False => Precedence::None,
-            TokenType::While => Precedence::None,
-            TokenType::For => Precedence::None,
-            TokenType::Fn => Precedence::None,
-            TokenType::Null => Precedence::None,
-            TokenType::Print => Precedence::None,
-            TokenType::Return => Precedence::None,
-            TokenType::Super => Precedence::None,
-            TokenType::This => Precedence::None,
-            TokenType::Var => Precedence::None,
-            TokenType::Eof => Precedence::None,
-            TokenType::Err(_) => Precedence::None,
+            TokenType::Minus | TokenType::Plus => Precedence::Term,
+            TokenType::Slash | TokenType::Star => Precedence::Factor,
+            TokenType::LeftParen
+            | TokenType::RightParen
+            | TokenType::LeftBrace
+            | TokenType::RightBrace
+            | TokenType::LeftBracket
+            | TokenType::RightBracket
+            | TokenType::Comma
+            | TokenType::Dot
+            | TokenType::Semicolon
+            | TokenType::Colon
+            | TokenType::Bang
+            | TokenType::BangEqual
+            | TokenType::Equal
+            | TokenType::EqualEqual
+            | TokenType::Greater
+            | TokenType::GreaterEqual
+            | TokenType::Less
+            | TokenType::LessEqual
+            | TokenType::Identifier(_)
+            | TokenType::String(_)
+            | TokenType::Character(_)
+            | TokenType::Integer(_)
+            | TokenType::Float(_)
+            | TokenType::Class
+            | TokenType::If
+            | TokenType::Else
+            | TokenType::True
+            | TokenType::False
+            | TokenType::While
+            | TokenType::For
+            | TokenType::Fn
+            | TokenType::Null
+            | TokenType::Print
+            | TokenType::Return
+            | TokenType::Super
+            | TokenType::This
+            | TokenType::Var
+            | TokenType::Eof
+            | TokenType::Err(_) => Precedence::None,
         }
     }
 }
@@ -313,7 +306,6 @@ impl Precedence {
 impl From<u8> for Precedence {
     fn from(precedence: u8) -> Self {
         match precedence {
-            0 => Precedence::None,
             1 => Precedence::Assignment,
             2 => Precedence::Or,
             3 => Precedence::And,
@@ -324,7 +316,7 @@ impl From<u8> for Precedence {
             8 => Precedence::Unary,
             9 => Precedence::Call,
             10 => Precedence::Primary,
-            _ => panic!("Unsupported precedence: {}", precedence),
+            _ => Precedence::None, // Also when 0
         }
     }
 }

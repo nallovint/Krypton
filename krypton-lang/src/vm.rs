@@ -1,13 +1,12 @@
 use std::fmt::{Display, Formatter};
-use std::mem;
 use std::mem::MaybeUninit;
 
 use crate::bytecode;
-use crate::bytecode::*;
+use crate::bytecode::{decode, Instruction, Klass, Value};
 
-const MAX_STACK_SIZE: u16 = 256;
+const MAX_STACK_SIZE: u16 = StackPointer::MAX as u16;
 type StackPointer = u8;
-type InstructionPointer = u64;
+type InstructionPointer = u32;
 type Stack<T> = [T; MAX_STACK_SIZE as usize];
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -22,7 +21,7 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
-            Error::DecodeError(error) => error.to_string(),
+            Self::DecodeError(error) => error.to_string(),
         })
     }
 }
@@ -36,25 +35,24 @@ pub struct VM {
 }
 
 impl VM {
+    #[must_use]
     pub fn new() -> Self {
-        let stack: [MaybeUninit<Value>; MAX_STACK_SIZE as usize] = [MaybeUninit::uninit(); MAX_STACK_SIZE as usize];
         Self {
-            stack: unsafe {
-                mem::transmute::<[MaybeUninit<Value>; MAX_STACK_SIZE as usize], [Value; MAX_STACK_SIZE as usize]>(
-                    stack,
-                )
-            },
-            klass: Default::default(),
+            // SAFETY: the pop and push methods guarantee safety
+            stack: unsafe { MaybeUninit::assume_init(MaybeUninit::uninit()) },
+            klass: Klass::default(),
             ip: 0,
             sp: 0,
         }
     }
 
-    pub fn load_and_run(&mut self, bytecode: Vec<u8>) -> Result<()> {
-        self.load(&bytecode)?;
+    #[allow(clippy::missing_errors_doc)]
+    pub fn load_and_run(&mut self, bytecode: &[u8]) -> Result<()> {
+        self.load(bytecode)?;
         self.run()
     }
 
+    #[allow(clippy::missing_errors_doc)]
     pub fn load(&mut self, bytecode: &[u8]) -> Result<()> {
         self.klass = decode(bytecode).map_err(Error::DecodeError)?;
         self.ip = 0;
@@ -62,10 +60,16 @@ impl VM {
         Ok(())
     }
 
+    #[allow(clippy::missing_errors_doc)]
+    #[allow(clippy::missing_panics_doc)]
     pub fn run(&mut self) -> Result<()> {
         while (self.ip as usize) < self.klass.instructions.len() {
+            // SAFETY:
+            //  The while loop above ensures that the index is always in bounds
+            //  so it's safe to index into the instructions array without bound
+            // checks
             let instruction = unsafe { *self.klass.instructions.get_unchecked(self.ip as usize) };
-            debug!("{}", self.debug_trace(&instruction));
+            debug!("{}", self.debug_trace(instruction));
             self.ip += 1;
             match instruction {
                 Instruction::LoadConstant { cp_addr } => self.load_constant(cp_addr),
@@ -82,6 +86,11 @@ impl VM {
 
     #[inline]
     fn load_constant(&mut self, offset: u16) {
+        //SAFETY:
+        // Assumes the bytecode is valid and never tries to access an out of
+        // bounds index so it's safe to index into the constant pool
+        // If the bytecode may be malformed, this function is **undefined
+        // behavior**
         let constant = unsafe { *self.klass.constant_pool.get_unchecked(offset as usize) };
         self.push(constant);
     }
@@ -126,16 +135,21 @@ impl VM {
     }
 
     fn push(&mut self, value: Value) {
-        self.stack[self.sp as usize] = value;
+        // NOTE: Uses MAX_STACK_SIZE because sp points to the next free slot
+        assert_ne!(self.sp as u16, MAX_STACK_SIZE, "Stack overflow");
+        // SAFETY: the sp is being bound checked above
+        *unsafe { self.stack.get_unchecked_mut(self.sp as usize) } = value;
         self.sp += 1;
     }
 
     fn pop(&mut self) -> Value {
         self.sp -= 1;
-        self.stack[self.sp as usize]
+        assert_ne!(self.sp as u16, 0, "Stack underflow");
+        // SAFETY: The sp is being bound checked above
+        unsafe { std::ptr::read(self.stack.get_unchecked(self.sp as usize)) }
     }
 
-    fn debug_trace(&self, instruction: &Instruction) -> String {
+    fn debug_trace(&self, instruction: Instruction) -> String {
         format!(
             "{}\n{}\n",
             self.debug_stack_trace(),
@@ -156,7 +170,7 @@ impl VM {
         )
     }
 
-    fn debug_instruction_trace(&self, instruction: &Instruction) -> String {
+    fn debug_instruction_trace(&self, instruction: Instruction) -> String {
         format!(
             "IP: {}, OP: {} '{}' # {}",
             self.ip,

@@ -1,6 +1,18 @@
 [package]
 name = "krypton-lsp"
 version = "0.1.0"
-edition = "2021"
+description = "A language server for the Krypton programming language."
+keywords = ["language-server", "krypton", "lsp"]
+categories = ["development-tools::debugging", "development-tools"]
+
+repository.workspace = true
+authors.workspace = true
+readme.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]

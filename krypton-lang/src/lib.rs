@@ -1,3 +1,4 @@
+extern crate core;
 #[macro_export]
 macro_rules! debug {
     ($($arg:tt)*) => {

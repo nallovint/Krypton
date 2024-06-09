@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::exit;
 
-use clap::{arg, command, ArgAction, ArgGroup};
+use clap::{arg, ArgAction, ArgGroup, command};
 
 fn main() {
     let matches = command!()
@@ -32,8 +32,10 @@ fn repl() {
     loop {
         print!("> ");
         let mut input = String::new();
-        std::io::stdout().flush().unwrap();
-        std::io::stdin().read_line(&mut input).unwrap();
+        std::io::stdout().flush().expect("REPL: Could not flush stdout");
+        std::io::stdin()
+            .read_line(&mut input)
+            .expect("REPL: Could not read from stdin");
 
         if input.starts_with("exit") || input.starts_with("quit") || input.starts_with(":q") {
             break;
@@ -42,7 +44,7 @@ fn repl() {
         if input.trim().is_empty() {
             let result = interpret(&input);
             match result {
-                Ok(result) => println!("{}", result),
+                Ok(result) => println!("{result}"),
                 Err(error) => exit(error),
             }
         }
@@ -53,7 +55,7 @@ fn run_file(source: &str) {
     println!("Running Krypton file");
     let result = interpret(source);
     match result {
-        Ok(result) => println!("{}", result),
+        Ok(result) => println!("{result}"),
         Err(error) => exit(error),
     }
 }
@@ -68,17 +70,18 @@ fn file_is_valid(file: &str) -> Result<String, String> {
             ));
         }
     } else {
-        return Err("File has no extension, expected `*.kr`".to_string());
+        return Err("File has no extension, expected `*.kr`".to_owned());
     }
 
     let file = std::fs::File::open(path);
-    let file = file.map_err(|e| format!("{}", e))?;
+    let file = file.map_err(|e| format!("{e}"))?;
     let mut file = std::io::BufReader::new(file);
     let mut contents = String::new();
-    file.read_to_string(&mut contents).map_err(|e| format!("{}", e))?;
+    file.read_to_string(&mut contents).map_err(|e| format!("{e}"))?;
     Ok(contents)
 }
 
-fn interpret(source: &str) -> Result<String, i32> {
-    Ok(source.to_string())
+fn interpret(_source: &str) -> Result<String, i32> {
+    // Ok(source.to_string())
+    todo!()
 }
