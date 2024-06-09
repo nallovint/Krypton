@@ -4,7 +4,18 @@ use std::process::exit;
 
 use clap::{arg, command, ArgAction, ArgGroup};
 
+use krypton_lang::vm::VM;
+use krypton_lang::{compiler, debug};
+
+const COMPILE_EXIT_CODE: u8 = b'C';
+const VM_EXIT_CODE: u8 = b'V';
+
 fn main() {
+    std::env::set_var("RUST_BACKTRACE", "1");
+    std::panic::set_hook(Box::new(|info| {
+        println!("{info}");
+    }));
+
     let matches = command!()
         .arg(
             arg!(--repl "Starts a REPL and enters it")
@@ -20,7 +31,9 @@ fn main() {
         .get_matches();
 
     if matches.contains_id("file") {
-        let input = matches.get_one::<String>("file").expect("Main: No file specified");
+        let input = matches
+            .get_one::<String>("file")
+            .expect("Main: No file specified");
         run_file(input);
     } else if matches.contains_id("repl") {
         repl();
@@ -32,7 +45,9 @@ fn repl() {
     loop {
         print!("> ");
         let mut input = String::new();
-        std::io::stdout().flush().expect("REPL: Could not flush stdout");
+        std::io::stdout()
+            .flush()
+            .expect("REPL: Could not flush stdout");
         std::io::stdin()
             .read_line(&mut input)
             .expect("REPL: Could not read from stdin");
@@ -41,11 +56,9 @@ fn repl() {
             break;
         }
 
-        if input.trim().is_empty() {
-            let result = interpret(&input);
-            match result {
-                Ok(result) => println!("{result}"),
-                Err(error) => exit(error),
+        if !input.trim().is_empty() {
+            if let Err(error) = interpret(&input) {
+                exit(error);
             }
         }
     }
@@ -53,10 +66,8 @@ fn repl() {
 
 fn run_file(source: &str) {
     println!("Running Krypton file");
-    let result = interpret(source);
-    match result {
-        Ok(result) => println!("{result}"),
-        Err(error) => exit(error),
+    if let Err(error) = interpret(source) {
+        exit(error);
     }
 }
 
@@ -77,11 +88,21 @@ fn file_is_valid(file: &str) -> Result<String, String> {
     let file = file.map_err(|e| format!("{e}"))?;
     let mut file = std::io::BufReader::new(file);
     let mut contents = String::new();
-    file.read_to_string(&mut contents).map_err(|e| format!("{e}"))?;
+    file.read_to_string(&mut contents)
+        .map_err(|e| format!("{e}"))?;
     Ok(contents)
 }
 
-fn interpret(_source: &str) -> Result<String, i32> {
-    // Ok(source.to_string())
-    todo!()
+fn interpret(source: &str) -> Result<(), i32> {
+    debug!("Executing: '{source}'");
+    let klass = compiler::compile(source).map_err(|e| {
+        eprintln!("{e:?}");
+        COMPILE_EXIT_CODE
+    })?;
+    debug!("Compiled successfully");
+    VM::new().load_and_run(&klass).map_err(|e| {
+        eprintln!("{e}");
+        VM_EXIT_CODE
+    })?;
+    Ok(())
 }

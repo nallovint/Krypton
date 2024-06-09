@@ -32,23 +32,20 @@ pub struct Parser<I: IntoIterator<Item = Token>> {
 }
 
 impl<I: Iterator<Item = Token>> Parser<I> {
-    pub fn new(input: I) -> Self {
+    #[allow(clippy::missing_panics_doc)]
+    pub fn new(mut input: I) -> Self {
+        let current = input.next().expect("Parser::new() called with empty input");
         Self {
             input,
             klass: Klass::default(),
             previous: None,
-            // A dummy token to start the iteration
-            // Not recommended, but it's better than having an option in the struct
-            // And then having to check for None everywhere even though it's impossible to be None
-            // Because self.advance() is immediately called
-            current: Token::dummy(),
+            current,
         }
     }
 
     #[allow(clippy::missing_errors_doc)]
     pub fn parse(mut self) -> Result<Klass> {
-        self.advance()?; // Immediately parse the dummy token
-        self.expression()?;
+        self.expression(None)?;
         self.consume(TokenType::Eof, "End of expression and file")?;
 
         // FIXME
@@ -69,7 +66,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             };
 
             if matches!(token.token_type, TokenType::Err(_)) {
-                errors.push(Error::LexingError(token));
                 continue;
             }
 
@@ -79,12 +75,22 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             break;
         }
 
-        if errors.is_empty() { Ok(()) } else { Err(errors) }
+        if errors.is_empty() {
+            // debug!("Previous token: {:?}", self.previous);
+            // debug!("Current token: {:?}", self.current);
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 
     fn consume(&mut self, token_type: TokenType, expected: &str) -> Result<()> {
         if self.current.token_type == token_type {
-            self.advance()?;
+            // Prevents crash when asserting EOF (bcz after EOF, calling advance()
+            // will error)
+            if token_type != TokenType::Eof {
+                self.advance()?;
+            }
             return Ok(());
         }
         Err(vec![Error::UnexpectedToken {
@@ -95,6 +101,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     fn emit_instruction(&mut self, instruction: Instruction, line: u16) {
+        debug!("Emitting instruction: {instruction:?}");
         let previous = self.klass.line_number_table.last();
         let add_entry = previous.map_or(true, |entry| entry.line_number != line);
 
@@ -112,6 +119,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     // =======================================================================
 
     fn emit_constant(&mut self, value: Value) -> u16 {
+        debug!("Emitting constant: {value:?}");
         #[allow(clippy::cast_possible_truncation)]
         let cp_addr = self.klass.constant_pool.len() as u16;
         self.klass.constant_pool.push(value);
@@ -119,22 +127,29 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     fn number(&mut self) {
-        let token = self.previous.take().expect("number() called without previous token");
+        debug!("Parsing number");
+        let token = self
+            .previous
+            .clone()
+            .expect("number() called without previous token");
         let value = value_from_token(&token.token_type);
         let cp_addr = self.emit_constant(value);
         self.emit_instruction(LoadConstant { cp_addr }, token.line);
     }
 
     fn grouping(&mut self) -> Result<()> {
-        self.expression()?;
+        self.expression(None)?;
         self.consume(TokenType::RightParen, "Expect ')' after expression")?;
         Ok(())
     }
 
     fn unary(&mut self) -> Result<()> {
-        let token = self.previous.take().expect("unary() called without previous token");
+        let token = self
+            .previous
+            .clone()
+            .expect("unary() called without previous token");
 
-        self.parse_precedence(Precedence::Unary)?;
+        self.expression(Some(Precedence::Unary))?;
 
         let instruction = match token.token_type {
             TokenType::Minus => Instruction::Negate,
@@ -145,9 +160,12 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     fn binary(&mut self) -> Result<()> {
-        let token = self.previous.take().expect("binary() called without previous token");
+        let token = self
+            .previous
+            .clone()
+            .expect("binary() called without previous token");
 
-        self.parse_precedence(Precedence::from_token(&token.token_type) + 1)?;
+        self.expression(Some(Precedence::from_token(&token.token_type) + 1))?;
 
         let instruction = match token.token_type {
             TokenType::Plus => Instruction::Add,
@@ -160,17 +178,19 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         Ok(())
     }
 
-    fn expression(&mut self) -> Result<()> {
-        self.parse_precedence(Precedence::Assignment)
-    }
-
-    fn parse_precedence(&mut self, precedence: Precedence) -> Result<()> {
+    fn expression(&mut self, precedence: Option<Precedence>) -> Result<()> {
+        let precedence = precedence.unwrap_or(Precedence::Assignment);
         self.advance()?;
+
+        debug!("Parsing expression with precedence: {precedence:?}");
 
         let prev = self
             .previous
-            .take()
+            .clone()
             .expect("parse_precedence() called without previous token");
+
+        debug!("Previous token: {prev:?}");
+
         match prev.token_type {
             TokenType::LeftParen => self.grouping()?,
             TokenType::Minus => self.unary()?,
@@ -187,7 +207,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             self.advance()?;
             let prev = self
                 .previous
-                .take()
+                .clone()
                 .expect("parse_precedence() called without previous token, inside infix loop");
 
             match prev.token_type {
@@ -202,9 +222,13 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                     }]);
                 }
             }
+
+            if self.current.token_type == TokenType::Eof {
+                break;
+            }
         }
 
-        todo!()
+        Ok(())
     }
 }
 
@@ -221,6 +245,7 @@ impl<I: Iterator<Item = Token>> From<I> for Parser<I> {
 }
 
 fn value_from_token(token_type: &TokenType) -> Value {
+    // debug!("Value from token: {token_type:?}");
     match token_type {
         TokenType::Integer(value) => i32::try_from(*value).map_or(Value::Long(*value), Value::Int),
         TokenType::Float(value) => {

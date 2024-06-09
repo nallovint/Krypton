@@ -13,6 +13,28 @@ pub enum Error {
     NotSingleCharacter(String, usize),
 }
 
+impl Clone for Error {
+    fn clone(&self) -> Self {
+        match self {
+            Error::UnrecognizedCharacter(c) => Error::UnrecognizedCharacter(*c),
+            Error::UnterminatedString => Error::UnterminatedString,
+            Error::UnterminatedCharacter => Error::UnterminatedCharacter,
+            Error::NotSingleCharacter(s, n) => Error::NotSingleCharacter(s.clone(), *n),
+            Error::EscapeError(e) => Error::EscapeError(match e {
+                unescaper::Error::IncompleteStr(size) => unescaper::Error::IncompleteStr(*size),
+                unescaper::Error::InvalidChar { char, pos } => unescaper::Error::InvalidChar {
+                    char: *char,
+                    pos: *pos,
+                },
+                unescaper::Error::ParseIntError { source, pos } => unescaper::Error::ParseIntError {
+                    source: source.clone(),
+                    pos: *pos,
+                },
+            }),
+        }
+    }
+}
+
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
         matches!(
@@ -79,7 +101,7 @@ impl Display for TokenStream {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     // Single-character tokens
     LeftParen,
@@ -201,7 +223,7 @@ impl Display for TokenType {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,
@@ -284,20 +306,20 @@ impl Lexer {
 
         self.skip_whitespace();
 
-        debug!("Skipped whitespace");
+        // debug!("Skipped whitespace");
 
         self.start = self.current;
 
-        debug!("Start: {:?}", self.start);
-        debug!("Current: {:?}", self.current);
-        debug!("Peek: {:?}", self.peek());
+        // debug!("Start: {:?}", self.start);
+        // debug!("Current: {:?}", self.current);
+        // debug!("Peek: {:?}", self.peek());
 
         let Some(c) = self.consume() else {
             self.stop = true;
             return self.create_token(TokenType::Eof);
         };
 
-        debug!("C: {c}");
+        // debug!("C: {c}");
 
         match c {
             // Single-character tokens
@@ -339,8 +361,14 @@ impl Lexer {
 
     #[must_use]
     fn create_token(&self, token_type: TokenType) -> Option<Token> {
-        let lexeme = self.source.get(self.start..self.current)?.iter().collect::<String>();
-        Some(Token::new(token_type, lexeme, self.line, self.column))
+        let lexeme = self
+            .source
+            .get(self.start..self.current)?
+            .iter()
+            .collect::<String>();
+        let token = Token::new(token_type, lexeme, self.line, self.column);
+        // debug!("Created Token: {token}");
+        Some(token)
     }
 
     fn consume(&mut self) -> Option<char> {
@@ -377,29 +405,29 @@ impl Lexer {
             let Some(c) = self.peek() else { return };
             match c {
                 ' ' | '\t' | '\r' | '\n' => {
-                    debug!("Skipping whitespace, C: {c}");
+                    // debug!("Skipping whitespace, C: {c}");
                     self.consume();
                 }
                 '/' => {
-                    debug!("Skipping whitespace, C: {c}");
+                    // debug!("Skipping whitespace, C: {c}");
                     let Some(next_c) = self.peek_next() else { return };
                     if next_c == '/' {
-                        debug!("Single line comment Next Peek: {:?}", next_c);
+                        // debug!("Single line comment Next Peek: {:?}", next_c);
                         self.consume(); // First '/'
                         self.consume(); // Second '/'
                         'inner: while let Some(c) = self.peek() {
-                            debug!("Multiline comment Peek: {:?}", c);
+                            // debug!("Multiline comment Peek: {:?}", c);
                             self.consume();
                             if c == '\n' {
                                 break 'inner;
                             }
                         }
                     } else if next_c == '*' {
-                        debug!("Multiline comment Next Peek: {:?}", next_c);
+                        // debug!("Multiline comment Next Peek: {:?}", next_c);
                         self.consume(); // '/'
                         self.consume(); // '*'
                         'inner: while let Some(c) = self.peek() {
-                            debug!("Multiline comment Peek: {:?}", c);
+                            // debug!("Multiline comment Peek: {:?}", c);
                             self.consume();
                             if c == '*' && self.peek() == Some('/') {
                                 self.consume(); // Consumes '/'
@@ -456,16 +484,19 @@ impl Lexer {
                 char_string.push(c);
                 continue;
             }
-            debug!("Char literal: |{}|", char_string);
+            // debug!("Char literal: |{}|", char_string);
             return match unescape(&char_string) {
                 Ok(unescaped) => {
-                    debug!("Unescaped: |{}|", unescaped);
+                    // debug!("Unescaped: |{}|", unescaped);
                     // unescaped.len() return amount of bytes, not chars,
                     // so we need to use chars().count()
                     if unescaped.chars().count() != 1 {
                         return self.create_error_token(Error::NotSingleCharacter(char_string, unescaped.len()));
                     }
-                    let c = unescaped.chars().next().expect("Must only be one character");
+                    let c = unescaped
+                        .chars()
+                        .next()
+                        .expect("Must only be one character");
                     self.create_token(TokenType::Character(c))
                 }
                 Err(e) => self.create_error_token(Error::EscapeError(e)),
@@ -476,7 +507,6 @@ impl Lexer {
     }
 
     fn number_literal(&mut self, initial_digit: char) -> Option<Token> {
-        // TODO: Use library "lexical" to parse numbers to allow for rust-like
         // syntax for floats and integers
         let mut number_string = String::new();
         number_string.push(initial_digit);

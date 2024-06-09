@@ -355,7 +355,9 @@ impl Identifier {
                 return Err(Error::IdentifierContainsIllegalChar(c));
             }
         }
-        Ok(Self { name: name.to_owned() })
+        Ok(Self {
+            name: name.to_owned(),
+        })
     }
 
     #[must_use]
@@ -387,6 +389,7 @@ impl Identifier {
 
 impl TryFrom<&str> for Identifier {
     type Error = Error;
+
     fn try_from(value: &str) -> Result<Self> {
         Self::new(value)
     }
@@ -394,6 +397,7 @@ impl TryFrom<&str> for Identifier {
 
 impl TryFrom<String> for Identifier {
     type Error = Error;
+
     fn try_from(value: String) -> Result<Self> {
         Self::new(&value)
     }
@@ -569,8 +573,11 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
     debug!("Offset (init): {}", instructions_start);
     while offset < instructions_start + instructions_size as usize {
         debug!("Offset (before): {}", offset);
-        let opcode: Opcode =
-            Opcode::from_u8(*bytecode.get(offset).ok_or(Error::BytecodeOutOfBoundsExpectedOpcode)?)?;
+        let opcode: Opcode = Opcode::from_u8(
+            *bytecode
+                .get(offset)
+                .ok_or(Error::BytecodeOutOfBoundsExpectedOpcode)?,
+        )?;
         debug!("Opcode: {}", opcode);
         let operands_size = opcode.operands_size();
         let instruction_bytes = if operands_size == 0 {
@@ -585,7 +592,12 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
         #[allow(clippy::unwrap_used)]
         let instruction = match opcode {
             Opcode::LoadConstant => Instruction::LoadConstant {
-                cp_addr: u16::from_be_bytes(instruction_bytes.expect("2-bytes long operand").try_into().unwrap()),
+                cp_addr: u16::from_be_bytes(
+                    instruction_bytes
+                        .expect("2-bytes long operand")
+                        .try_into()
+                        .unwrap(),
+                ),
             },
             Opcode::Return => Instruction::Return,
             Opcode::Negate => Instruction::Negate,

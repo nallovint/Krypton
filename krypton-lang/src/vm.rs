@@ -47,14 +47,28 @@ impl VM {
     }
 
     #[allow(clippy::missing_errors_doc)]
-    pub fn load_and_run(&mut self, bytecode: &[u8]) -> Result<()> {
-        self.load(bytecode)?;
+    pub fn load_bytecode_and_run(&mut self, bytecode: &[u8]) -> Result<()> {
+        self.load_bytecode(bytecode)?;
         self.run()
     }
 
     #[allow(clippy::missing_errors_doc)]
-    pub fn load(&mut self, bytecode: &[u8]) -> Result<()> {
+    pub fn load_and_run(&mut self, klass: &Klass) -> Result<()> {
+        self.load(klass)?;
+        self.run()
+    }
+
+    #[allow(clippy::missing_errors_doc)]
+    pub fn load_bytecode(&mut self, bytecode: &[u8]) -> Result<()> {
         self.klass = decode(bytecode).map_err(Error::DecodeError)?;
+        self.ip = 0;
+        self.sp = 0;
+        Ok(())
+    }
+
+    #[allow(clippy::missing_errors_doc)]
+    pub fn load(&mut self, klass: &Klass) -> Result<()> {
+        self.klass = klass.clone();
         self.ip = 0;
         self.sp = 0;
         Ok(())
@@ -143,18 +157,14 @@ impl VM {
     }
 
     fn pop(&mut self) -> Value {
-        self.sp -= 1;
         assert_ne!(self.sp as u16, 0, "Stack underflow");
+        self.sp -= 1;
         // SAFETY: The sp is being bound checked above
         unsafe { std::ptr::read(self.stack.get_unchecked(self.sp as usize)) }
     }
 
     fn debug_trace(&self, instruction: Instruction) -> String {
-        format!(
-            "{}\n{}\n",
-            self.debug_stack_trace(),
-            self.debug_instruction_trace(instruction)
-        )
+        format!("{}\n{}\n", self.debug_stack_trace(), self.debug_instruction_trace(instruction))
     }
 
     fn debug_stack_trace(&self) -> String {
