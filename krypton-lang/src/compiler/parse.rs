@@ -2,8 +2,8 @@ use std::cmp::PartialOrd;
 use std::mem;
 use std::ops::Add;
 
-use crate::bytecode::{Instruction, Klass, LineNumberEntry, Value};
 use crate::bytecode::Instruction::LoadConstant;
+use crate::bytecode::{Instruction, Klass, LineNumberEntry, Value};
 use crate::compiler::lex::{Token, TokenStream, TokenType};
 
 pub type Result<T> = std::result::Result<T, Vec<Error>>;
