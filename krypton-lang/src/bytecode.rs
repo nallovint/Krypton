@@ -361,7 +361,8 @@ impl Identifier {
     }
 
     #[must_use]
-    pub const fn new_unchecked(name: String) -> Self {
+    #[allow(clippy::missing_safety_doc)]
+    pub const unsafe fn new_unchecked(name: String) -> Self {
         Self { name }
     }
 
@@ -645,4 +646,90 @@ impl BinaryDisplayExt for Vec<u8> {
     fn display_binary(&self) -> String {
         self.as_slice().display_binary()
     }
+}
+
+#[must_use]
+pub fn dump(klass: &Klass) -> String {
+    /*
+    Example:
+    ============================
+    || Core dumped V1         ||
+    || (optional name)        ||
+    ============================
+    | = Constant pool (size) = |
+    ----------------------------
+    | 0 | 8 | 16
+    | 1 | 4 | "Hello, world!"
+    | 2 | 8 | 42.5
+    ----------------------------
+    | = Instructions (size)  = |
+    ----------------------------
+    | 0 | C | const [2]
+    | 1 | r | ret
+    ----------------------------
+    | =  Line number table   = |
+    ----------------------------
+    | 0 | 500 | 1000
+    | 1 | 750 | 1500
+    ----------------------------
+     */
+    let border_length = "============================".len();
+    let name = klass.name.clone().map_or(String::new(), |name| {
+        format!("\n|| {:<border_length$} ||", name.as_str(), border_length = border_length)
+    });
+
+    let mut constant_pool = String::new();
+    for (i, constant_pool_entry) in klass.constant_pool.iter().enumerate() {
+        constant_pool
+            .push_str(format!("\n| {i} | {:?} | {}", constant_pool_entry.tag(), constant_pool_entry).as_str());
+    }
+
+    let mut instructions = String::new();
+    for (i, instruction) in klass.instructions.iter().enumerate() {
+        instructions
+            .push_str(format!("\n| {i:>5} | '{}' | {instruction}", (instruction.opcode() as u8) as char).as_str());
+    }
+
+    let mut line_number_table = String::new();
+    for (i, window) in klass.line_number_table.windows(2).enumerate() {
+        let line_number_entry = window[0];
+        let next = window[1];
+        line_number_table.push_str(
+            format!(
+                "\n| {i} | {} -> {}-{}",
+                line_number_entry.line_number,
+                line_number_entry.start_pc,
+                next.start_pc - 1
+            )
+            .as_str(),
+        );
+    }
+    if let Some(last) = klass.line_number_table.last() {
+        line_number_table.push_str(
+            format!(
+                "\n| {} | {} -> {}-{}",
+                klass.line_number_table.len() - 1,
+                last.line_number,
+                last.start_pc,
+                klass.instructions.len() - 1
+            )
+            .as_str(),
+        );
+    }
+
+    format!(
+        r#"============================
+|| Core dumped v{}         ||{}
+============================
+| = Constant pool (size) = |
+----------------------------{}
+----------------------------
+| = Instructions (size)  = |
+----------------------------{}
+----------------------------
+| =  Line number table   = |
+----------------------------{}
+----------------------------"#,
+        klass.version, name, constant_pool, instructions, line_number_table
+    )
 }
