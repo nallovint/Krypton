@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
-use std::mem::MaybeUninit;
+use std::mem::{MaybeUninit, ManuallyDrop};
+use std::collections::HashMap;
 
 use crate::bytecode;
 use crate::bytecode::{decode, Instruction, Klass, Value};
@@ -7,7 +8,7 @@ use crate::bytecode::{decode, Instruction, Klass, Value};
 const MAX_STACK_SIZE: u16 = StackPointer::MAX as u16;
 type StackPointer = u8;
 type InstructionPointer = u32;
-type Stack<T> = [T; MAX_STACK_SIZE as usize];
+type Stack<T> = [MaybeUninit<T>; MAX_STACK_SIZE as usize];
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -16,12 +17,14 @@ pub enum Error {
     // Compile errors
     DecodeError(bytecode::Error),
     // Runtime errors
+    UndefinedVariable(String),
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
             Self::DecodeError(error) => error.to_string(),
+            Self::UndefinedVariable(name) => format!("Undefined variable '{}'", name),
         })
     }
 }
@@ -32,6 +35,7 @@ pub struct VM {
     ip: InstructionPointer,
     stack: Stack<Value>,
     sp: StackPointer,
+    globals: HashMap<String, Value>,
 }
 
 impl VM {
@@ -43,6 +47,7 @@ impl VM {
             klass: Klass::default(),
             ip: 0,
             sp: 0,
+            globals: HashMap::new(),
         }
     }
 
@@ -93,6 +98,9 @@ impl VM {
                 Instruction::Subtract => self.subtract_value(),
                 Instruction::Multiply => self.multiply_value(),
                 Instruction::Divide => self.divide_value(),
+                Instruction::DefineGlobal { cp_addr } => self.define_global(cp_addr)?,
+                Instruction::GetGlobal { cp_addr } => self.get_global(cp_addr)?,
+                Instruction::SetGlobal { cp_addr } => self.set_global(cp_addr)?,
             }
         }
         Ok(())
@@ -100,18 +108,16 @@ impl VM {
 
     #[inline]
     fn load_constant(&mut self, offset: u16) {
-        //SAFETY:
-        // Assumes the bytecode is valid and never tries to access an out of
-        // bounds index so it's safe to index into the constant pool
-        // If the bytecode may be malformed, this function is **undefined
-        // behavior**
-        let constant = unsafe { *self.klass.constant_pool.get_unchecked(offset as usize) };
+        let constant = unsafe { (*self.klass.constant_pool.get_unchecked(offset as usize)).clone() };
         self.push(constant);
     }
 
     #[inline]
     fn return_instruction(&mut self) {
-        println!("{}", self.pop());
+        if self.sp > 0 {
+            println!("{}", self.pop());
+        }
+        // else: do nothing
     }
 
     #[inline]
@@ -148,19 +154,61 @@ impl VM {
         self.push(a / b);
     }
 
+    #[inline]
+    fn define_global(&mut self, cp_addr: u16) -> Result<()> {
+        let name = self.get_constant_string(cp_addr)?;
+        let value = self.pop();
+        self.globals.insert(name, value);
+        Ok(())
+    }
+
+    #[inline]
+    fn get_global(&mut self, cp_addr: u16) -> Result<()> {
+        let name = self.get_constant_string(cp_addr)?;
+        let value = self.globals.get(&name)
+            .ok_or_else(|| Error::UndefinedVariable(name.clone()))?
+            .clone();
+        self.push(value);
+        Ok(())
+    }
+
+    #[inline]
+    fn set_global(&mut self, cp_addr: u16) -> Result<()> {
+        let name = self.get_constant_string(cp_addr)?;
+        let value = self.pop();
+        if self.globals.contains_key(&name) {
+            self.globals.insert(name, value);
+            Ok(())
+        } else {
+            Err(Error::UndefinedVariable(name))
+        }
+    }
+
+    #[inline]
+    fn get_constant_string(&self, cp_addr: u16) -> Result<String> {
+        let value = unsafe { (*self.klass.constant_pool.get_unchecked(cp_addr as usize)).clone() };
+        match value {
+            Value::String(s) => Ok(s),
+            _ => panic!("Expected string constant"),
+        }
+    }
+
     fn push(&mut self, value: Value) {
-        // NOTE: Uses MAX_STACK_SIZE because sp points to the next free slot
         assert_ne!(self.sp as u16, MAX_STACK_SIZE, "Stack overflow");
-        // SAFETY: the sp is being bound checked above
-        *unsafe { self.stack.get_unchecked_mut(self.sp as usize) } = value;
+        unsafe {
+            let slot = self.stack.get_unchecked_mut(self.sp as usize);
+            slot.write(value);
+        }
         self.sp += 1;
     }
 
     fn pop(&mut self) -> Value {
         assert_ne!(self.sp as u16, 0, "Stack underflow");
         self.sp -= 1;
-        // SAFETY: The sp is being bound checked above
-        unsafe { std::ptr::read(self.stack.get_unchecked(self.sp as usize)) }
+        unsafe {
+            let slot = self.stack.get_unchecked_mut(self.sp as usize);
+            slot.assume_init_read()
+        }
     }
 
     fn debug_trace(&self, instruction: Instruction) -> String {
@@ -168,15 +216,14 @@ impl VM {
     }
 
     fn debug_stack_trace(&self) -> String {
+        let mut stack_strs = Vec::new();
+        for i in 0..self.sp as usize {
+            let value = unsafe { self.stack.get_unchecked(i).assume_init_ref() };
+            stack_strs.push(format!("[ {:^11} ] # {}", format!("{}", value), i));
+        }
         format!(
             "==== Stack ====\n{}\n---------------",
-            self.stack
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| *i < self.sp as usize)
-                .map(|(i, value)| format!("[ {:^11} ] # {}", format!("{value}"), i))
-                .collect::<Vec<String>>()
-                .join("\n")
+            stack_strs.join("\n")
         )
     }
 
@@ -188,6 +235,17 @@ impl VM {
             instruction.opcode() as u8 as char,
             instruction
         )
+    }
+}
+
+impl Drop for VM {
+    fn drop(&mut self) {
+        // Only drop initialized elements
+        for i in 0..self.sp as usize {
+            unsafe {
+                self.stack.get_unchecked_mut(i).assume_init_drop();
+            }
+        }
     }
 }
 

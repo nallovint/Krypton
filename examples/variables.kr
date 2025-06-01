@@ -1,0 +1,25 @@
+// Variable declaration and initialization
+var x = 42;
+var y = 10;
+
+// Basic arithmetic with variables
+var sum = x + y;
+var difference = x - y;
+var product = x * y;
+var quotient = x / y;
+
+// Variable reassignment
+x = 100;
+y = 20;
+
+// String variables
+var message = "Hello";
+var name = "World";
+var greeting = message + " " + name;
+
+// Print results
+sum;
+difference;
+product;
+quotient;
+greeting; 

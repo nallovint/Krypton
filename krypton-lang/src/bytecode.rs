@@ -76,6 +76,7 @@ pub enum Tag {
     Float = 0b_0110_0110,  // 'f'
     Long = 0b_0100_1001,   // 'I'
     Int = 0b_0110_1001,    // 'i'
+    String = 0b_0101_0011, // 'S'
 }
 
 impl Tag {
@@ -86,6 +87,7 @@ impl Tag {
             0b_0110_0110 => Ok(Tag::Float),
             0b_0100_1001 => Ok(Tag::Long),
             0b_0110_1001 => Ok(Tag::Int),
+            0b_0101_0011 => Ok(Tag::String),
             _ => Err(Error::InvalidTag(tag)),
         }
     }
@@ -95,16 +97,18 @@ impl Tag {
         match self {
             Tag::Double | Tag::Long => 8,
             Tag::Float | Tag::Int => 4,
+            Tag::String => 0, // Variable length
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Double(f64),
     Float(f32),
     Long(i64),
     Int(i32),
+    String(String),
 }
 
 impl Value {
@@ -115,6 +119,7 @@ impl Value {
             Value::Float(_) => Tag::Float,
             Value::Long(_) => Tag::Long,
             Value::Int(_) => Tag::Int,
+            Value::String(_) => Tag::String,
         }
     }
 
@@ -125,6 +130,7 @@ impl Value {
             Value::Float(value) => value.to_be_bytes().to_vec(),
             Value::Long(value) => value.to_be_bytes().to_vec(),
             Value::Int(value) => value.to_be_bytes().to_vec(),
+            Value::String(value) => value.as_bytes().to_vec(),
         }
     }
 }
@@ -136,6 +142,7 @@ impl Display for Value {
             Value::Float(value) => value.to_string(),
             Value::Long(value) => value.to_string(),
             Value::Int(value) => value.to_string(),
+            Value::String(value) => value.to_string(),
         })
     }
 }
@@ -149,6 +156,7 @@ impl std::ops::Neg for Value {
             Value::Float(value) => Value::Float(-value),
             Value::Long(value) => Value::Long(-value),
             Value::Int(value) => Value::Int(-value),
+            Value::String(_) => panic!("Cannot negate string"),
         }
     }
 }
@@ -162,6 +170,7 @@ impl std::ops::Add for Value {
             (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs + rhs),
             (Value::Long(lhs), Value::Long(rhs)) => Value::Long(lhs + rhs),
             (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs + rhs),
+            (Value::String(lhs), Value::String(rhs)) => Value::String(lhs + &rhs),
             _ => panic!("Invalid operands"),
         }
     }
@@ -176,7 +185,7 @@ impl std::ops::Sub for Value {
             (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs - rhs),
             (Value::Long(lhs), Value::Long(rhs)) => Value::Long(lhs - rhs),
             (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs - rhs),
-            _ => panic!("Invalid operands"),
+            _ => panic!("Cannot subtract strings"),
         }
     }
 }
@@ -190,7 +199,7 @@ impl std::ops::Mul for Value {
             (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs * rhs),
             (Value::Long(lhs), Value::Long(rhs)) => Value::Long(lhs * rhs),
             (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs * rhs),
-            _ => panic!("Invalid operands"),
+            _ => panic!("Cannot multiply strings"),
         }
     }
 }
@@ -204,7 +213,7 @@ impl std::ops::Div for Value {
             (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs / rhs),
             (Value::Long(lhs), Value::Long(rhs)) => Value::Long(lhs / rhs),
             (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs / rhs),
-            _ => panic!("Invalid operands"),
+            _ => panic!("Cannot divide strings"),
         }
     }
 }
@@ -225,6 +234,9 @@ pub enum Opcode {
     Subtract = 0b_00101101,     // '-'
     Multiply = 0b_00101010,     // '*'
     Divide = 0b_00101111,       // '/'
+    DefineGlobal = 0b_01000111, // 'G'
+    GetGlobal = 0b_01000110,    // 'g'
+    SetGlobal = 0b_01010011,    // 'S'
 }
 
 impl Opcode {
@@ -238,6 +250,9 @@ impl Opcode {
             0b_00101101 => Opcode::Subtract,     // '-'
             0b_00101010 => Opcode::Multiply,     // '*'
             0b_00101111 => Opcode::Divide,       // '/'
+            0b_01000111 => Opcode::DefineGlobal, // 'G'
+            0b_01000110 => Opcode::GetGlobal,    // 'g'
+            0b_01010011 => Opcode::SetGlobal,    // 'S'
             _ => return Err(Error::UnrecognizedOpcode(opcode)),
         })
     }
@@ -245,7 +260,7 @@ impl Opcode {
     #[must_use]
     pub const fn operands_size(&self) -> usize {
         match self {
-            Opcode::LoadConstant => 2,
+            Opcode::LoadConstant | Opcode::DefineGlobal | Opcode::GetGlobal | Opcode::SetGlobal => 2,
             Opcode::Return
             | Opcode::Negate
             | Opcode::Add
@@ -266,6 +281,9 @@ impl Display for Opcode {
             Opcode::Subtract => "sub",
             Opcode::Multiply => "mul",
             Opcode::Divide => "div",
+            Opcode::DefineGlobal => "defg",
+            Opcode::GetGlobal => "getg",
+            Opcode::SetGlobal => "setg",
         })
     }
 }
@@ -279,6 +297,9 @@ pub enum Instruction {
     Subtract,
     Multiply,
     Divide,
+    DefineGlobal { cp_addr: u16 },
+    GetGlobal { cp_addr: u16 },
+    SetGlobal { cp_addr: u16 },
 }
 
 impl Instruction {
@@ -292,6 +313,9 @@ impl Instruction {
             Instruction::Subtract => Opcode::Subtract,
             Instruction::Multiply => Opcode::Multiply,
             Instruction::Divide => Opcode::Divide,
+            Instruction::DefineGlobal { .. } => Opcode::DefineGlobal,
+            Instruction::GetGlobal { .. } => Opcode::GetGlobal,
+            Instruction::SetGlobal { .. } => Opcode::SetGlobal,
         }
     }
 
@@ -300,7 +324,10 @@ impl Instruction {
         let mut bytes = Vec::new();
         bytes.push(self.opcode() as u8);
         match self {
-            Instruction::LoadConstant { cp_addr } => bytes.extend(cp_addr.to_be_bytes()),
+            Instruction::LoadConstant { cp_addr } |
+            Instruction::DefineGlobal { cp_addr } |
+            Instruction::GetGlobal { cp_addr } |
+            Instruction::SetGlobal { cp_addr } => bytes.extend(cp_addr.to_be_bytes()),
             Instruction::Return
             | Instruction::Negate
             | Instruction::Add
@@ -322,6 +349,9 @@ impl Display for Instruction {
             Instruction::Subtract => "sub".to_owned(),
             Instruction::Multiply => "mul".to_owned(),
             Instruction::Divide => "div".to_owned(),
+            Instruction::DefineGlobal { cp_addr } => format!("defg [{cp_addr}]"),
+            Instruction::GetGlobal { cp_addr } => format!("getg [{cp_addr}]"),
+            Instruction::SetGlobal { cp_addr } => format!("setg [{cp_addr}]"),
         })
     }
 }
@@ -548,6 +578,7 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
             Tag::Float => Value::Float(f32::from_be_bytes(entry_bytes.try_into().unwrap())),
             Tag::Long => Value::Long(i64::from_be_bytes(entry_bytes.try_into().unwrap())),
             Tag::Int => Value::Int(i32::from_be_bytes(entry_bytes.try_into().unwrap())),
+            Tag::String => Value::String(String::from_utf8(entry_bytes.to_vec()).expect("Invalid UTF-8")),
         };
         klass.constant_pool.push(entry);
         offset += 1 + entry_size;
@@ -606,6 +637,30 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
             Opcode::Subtract => Instruction::Subtract,
             Opcode::Multiply => Instruction::Multiply,
             Opcode::Divide => Instruction::Divide,
+            Opcode::DefineGlobal => Instruction::DefineGlobal {
+                cp_addr: u16::from_be_bytes(
+                    instruction_bytes
+                        .expect("2-bytes long operand")
+                        .try_into()
+                        .unwrap(),
+                ),
+            },
+            Opcode::GetGlobal => Instruction::GetGlobal {
+                cp_addr: u16::from_be_bytes(
+                    instruction_bytes
+                        .expect("2-bytes long operand")
+                        .try_into()
+                        .unwrap(),
+                ),
+            },
+            Opcode::SetGlobal => Instruction::SetGlobal {
+                cp_addr: u16::from_be_bytes(
+                    instruction_bytes
+                        .expect("2-bytes long operand")
+                        .try_into()
+                        .unwrap(),
+                ),
+            },
         };
         klass.instructions.push(instruction);
         offset += 1 + operands_size;

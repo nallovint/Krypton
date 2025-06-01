@@ -2,7 +2,7 @@ use std::cmp::PartialOrd;
 use std::mem;
 use std::ops::Add;
 
-use crate::bytecode::Instruction::LoadConstant;
+use crate::bytecode::Instruction::{LoadConstant, DefineGlobal, GetGlobal, SetGlobal};
 use crate::bytecode::{Instruction, Klass, LineNumberEntry, Value};
 use crate::compiler::lex::{Token, TokenStream, TokenType};
 
@@ -20,6 +20,9 @@ pub enum Error {
     ExpectedExpression {
         got: Token,
         message: String,
+    },
+    ExpectedVariableName {
+        got: Token,
     },
 }
 
@@ -45,13 +48,9 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
     #[allow(clippy::missing_errors_doc)]
     pub fn parse(mut self) -> Result<Klass> {
-        self.expression(None)?;
-        self.consume(TokenType::Eof, "End of expression and file")?;
-
-        // FIXME
-        //  Remove this later, temp instruction to "print" the result
-        self.klass.instructions.push(Instruction::Return);
-
+        while self.current.token_type != TokenType::Eof {
+            self.declaration()?;
+        }
         Ok(self.klass)
     }
 
@@ -178,6 +177,56 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         Ok(())
     }
 
+    fn declaration(&mut self) -> Result<()> {
+        match self.current.token_type {
+            TokenType::Var => {
+                self.advance()?;
+                self.var_declaration()?;
+            }
+            _ => {
+                self.statement()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn var_declaration(&mut self) -> Result<()> {
+        let name = self.consume_identifier("Expect variable name")?;
+        let name_cp_addr = self.emit_constant(Value::String(name));
+        
+        if self.current.token_type == TokenType::Equal {
+            self.advance()?; // consume '='
+            self.expression(None)?;
+        } else {
+            // Initialize with null
+            self.emit_constant(Value::Int(0));
+        }
+
+        self.emit_instruction(DefineGlobal { cp_addr: name_cp_addr }, self.previous.as_ref().unwrap().line);
+        // Consume the semicolon after variable declaration
+        self.consume(TokenType::Semicolon, "Expect ';' after variable declaration")?;
+        Ok(())
+    }
+
+    fn statement(&mut self) -> Result<()> {
+        self.expression(None)?;
+        self.consume(TokenType::Semicolon, "Expect ';' after expression")?;
+        self.emit_instruction(Instruction::Return, self.previous.as_ref().unwrap().line);
+        Ok(())
+    }
+
+    fn consume_identifier(&mut self, message: &str) -> Result<String> {
+        if let TokenType::Identifier(name) = &self.current.token_type {
+            let name = name.clone();
+            self.advance()?;
+            Ok(name)
+        } else {
+            Err(vec![Error::ExpectedVariableName {
+                got: mem::replace(&mut self.current, Token::dummy()),
+            }])
+        }
+    }
+
     fn expression(&mut self, precedence: Option<Precedence>) -> Result<()> {
         let precedence = precedence.unwrap_or(Precedence::Assignment);
         self.advance()?;
@@ -195,6 +244,20 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             TokenType::LeftParen => self.grouping()?,
             TokenType::Minus => self.unary()?,
             TokenType::Integer(_) | TokenType::Float(_) => self.number(),
+            TokenType::String(ref s) => {
+                let cp_addr = self.emit_constant(Value::String(s.clone()));
+                self.emit_instruction(LoadConstant { cp_addr }, prev.line);
+            }
+            TokenType::Identifier(name) => {
+                let cp_addr = self.emit_constant(Value::String(name));
+                if self.current.token_type == TokenType::Equal {
+                    self.advance()?; // consume '='
+                    self.expression(Some(Precedence::Assignment))?;
+                    self.emit_instruction(SetGlobal { cp_addr }, prev.line);
+                } else {
+                    self.emit_instruction(GetGlobal { cp_addr }, prev.line);
+                }
+            }
             _ => {
                 return Err(vec![Error::ExpectedExpression {
                     got: prev,
