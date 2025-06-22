@@ -137,6 +137,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     fn grouping(&mut self) -> Result<()> {
+        self.advance()?; // Move to the first token inside the parens
         self.expression(None)?;
         self.consume(TokenType::RightParen, "Expect ')' after expression")?;
         Ok(())
@@ -196,6 +197,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         
         if self.current.token_type == TokenType::Equal {
             self.advance()?; // consume '='
+            self.advance()?; // ADVANCE TO START OF EXPRESSION
             self.expression(None)?;
         } else {
             // Initialize with null
@@ -209,13 +211,78 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     fn statement(&mut self) -> Result<()> {
-        self.expression(None)?;
-        self.consume(TokenType::Semicolon, "Expect ';' after expression")?;
-        self.emit_instruction(Instruction::Return, self.previous.as_ref().unwrap().line);
+        match self.current.token_type {
+            TokenType::If => {
+                self.advance()?;
+                self.if_statement()?;
+            }
+            TokenType::Print => {
+                self.advance()?;
+                self.print_statement()?;
+            }
+            _ => {
+                self.advance()?; // ADVANCE TO START OF EXPRESSION
+                self.expression(None)?;
+                self.consume(TokenType::Semicolon, "Expect ';' after expression")?;
+                self.emit_instruction(Instruction::Return, self.previous.as_ref().unwrap().line);
+            }
+        }
         Ok(())
     }
 
-    fn consume_identifier(&mut self, message: &str) -> Result<String> {
+    fn if_statement(&mut self) -> Result<()> {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'if'")?;
+        self.expression(None)?;
+        // The closing ')' is already consumed by grouping()
+
+        // Emit jump if false instruction
+        let jump_if_false = self.klass.instructions.len();
+        self.emit_instruction(Instruction::JumpIfFalse { offset: 0 }, self.previous.as_ref().unwrap().line);
+        
+        // Parse the then branch
+        self.consume(TokenType::LeftBrace, "Expect '{' before then branch")?;
+        self.declaration()?;
+        self.consume(TokenType::RightBrace, "Expect '}' after then branch")?;
+
+        // If there's an else branch, emit jump to skip it
+        let else_jump = if self.current.token_type == TokenType::Else {
+            self.advance()?;
+            let jump = self.klass.instructions.len();
+            self.emit_instruction(Instruction::Jump { offset: 0 }, self.previous.as_ref().unwrap().line);
+            Some(jump)
+        } else {
+            None
+        };
+
+        // Update the jump_if_false offset to point to the end of the then branch
+        let offset = self.klass.instructions.len() - jump_if_false - 1;
+        self.klass.instructions[jump_if_false] = Instruction::JumpIfFalse { offset: offset as u16 };
+
+        // Parse the else branch if it exists
+        if let Some(else_jump) = else_jump {
+            self.consume(TokenType::LeftBrace, "Expect '{' before else branch")?;
+            self.declaration()?;
+            self.consume(TokenType::RightBrace, "Expect '}' after else branch")?;
+
+            // Update the else jump offset to point to the end of the else branch
+            let offset = self.klass.instructions.len() - else_jump - 1;
+            self.klass.instructions[else_jump] = Instruction::Jump { offset: offset as u16 };
+        }
+
+        Ok(())
+    }
+
+    fn print_statement(&mut self) -> Result<()> {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'print'")?;
+        self.advance()?; // Move to the first token of the expression
+        self.expression(None)?;
+        self.consume(TokenType::RightParen, "Expect ')' after print expression")?;
+        self.consume(TokenType::Semicolon, "Expect ';' after print statement")?;
+        self.emit_instruction(Instruction::Print, self.previous.as_ref().unwrap().line);
+        Ok(())
+    }
+
+    fn consume_identifier(&mut self, _message: &str) -> Result<String> {
         if let TokenType::Identifier(name) = &self.current.token_type {
             let name = name.clone();
             self.advance()?;
@@ -229,7 +296,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
     fn expression(&mut self, precedence: Option<Precedence>) -> Result<()> {
         let precedence = precedence.unwrap_or(Precedence::Assignment);
-        self.advance()?;
 
         debug!("Parsing expression with precedence: {precedence:?}");
 
@@ -248,10 +314,19 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 let cp_addr = self.emit_constant(Value::String(s.clone()));
                 self.emit_instruction(LoadConstant { cp_addr }, prev.line);
             }
+            TokenType::True => {
+                let cp_addr = self.emit_constant(Value::Int(1));
+                self.emit_instruction(LoadConstant { cp_addr }, prev.line);
+            }
+            TokenType::False => {
+                let cp_addr = self.emit_constant(Value::Int(0));
+                self.emit_instruction(LoadConstant { cp_addr }, prev.line);
+            }
             TokenType::Identifier(name) => {
                 let cp_addr = self.emit_constant(Value::String(name));
                 if self.current.token_type == TokenType::Equal {
                     self.advance()?; // consume '='
+                    self.advance()?; // Set previous to the first token of the right-hand side
                     self.expression(Some(Precedence::Assignment))?;
                     self.emit_instruction(SetGlobal { cp_addr }, prev.line);
                 } else {
@@ -267,25 +342,30 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         }
 
         while precedence <= Precedence::from_token(&self.current.token_type) {
-            self.advance()?;
-            let prev = self
-                .previous
-                .clone()
-                .expect("parse_precedence() called without previous token, inside infix loop");
-
-            match prev.token_type {
-                TokenType::Plus => self.binary()?,
-                TokenType::Minus => self.binary()?,
-                TokenType::Star => self.binary()?,
-                TokenType::Slash => self.binary()?,
+            let operator = self.current.clone(); // Store the operator token
+            let op_token_type = operator.token_type.clone();
+            self.advance()?; // Advance to the start of the right-hand side
+            self.advance()?; // Set previous to the first token of the right-hand side
+            self.expression(Some(Precedence::from_token(&op_token_type) + 1))?;
+            let instruction = match op_token_type {
+                TokenType::Plus => Instruction::Add,
+                TokenType::Minus => Instruction::Subtract,
+                TokenType::Star => Instruction::Multiply,
+                TokenType::Slash => Instruction::Divide,
+                TokenType::EqualEqual => Instruction::EqualEqual,
+                TokenType::BangEqual => Instruction::BangEqual,
+                TokenType::Less => Instruction::Less,
+                TokenType::LessEqual => Instruction::LessEqual,
+                TokenType::Greater => Instruction::Greater,
+                TokenType::GreaterEqual => Instruction::GreaterEqual,
                 _ => {
                     return Err(vec![Error::ExpectedExpression {
-                        got: prev,
+                        got: operator,
                         message: "Expected expression".to_owned(),
                     }]);
                 }
-            }
-
+            };
+            self.emit_instruction(instruction, operator.line);
             if self.current.token_type == TokenType::Eof {
                 break;
             }
@@ -348,45 +428,9 @@ impl Precedence {
         match token_type {
             TokenType::Minus | TokenType::Plus => Precedence::Term,
             TokenType::Slash | TokenType::Star => Precedence::Factor,
-            TokenType::LeftParen
-            | TokenType::RightParen
-            | TokenType::LeftBrace
-            | TokenType::RightBrace
-            | TokenType::LeftBracket
-            | TokenType::RightBracket
-            | TokenType::Comma
-            | TokenType::Dot
-            | TokenType::Semicolon
-            | TokenType::Colon
-            | TokenType::Bang
-            | TokenType::BangEqual
-            | TokenType::Equal
-            | TokenType::EqualEqual
-            | TokenType::Greater
-            | TokenType::GreaterEqual
-            | TokenType::Less
-            | TokenType::LessEqual
-            | TokenType::Identifier(_)
-            | TokenType::String(_)
-            | TokenType::Character(_)
-            | TokenType::Integer(_)
-            | TokenType::Float(_)
-            | TokenType::Class
-            | TokenType::If
-            | TokenType::Else
-            | TokenType::True
-            | TokenType::False
-            | TokenType::While
-            | TokenType::For
-            | TokenType::Fn
-            | TokenType::Null
-            | TokenType::Print
-            | TokenType::Return
-            | TokenType::Super
-            | TokenType::This
-            | TokenType::Var
-            | TokenType::Eof
-            | TokenType::Err(_) => Precedence::None,
+            TokenType::EqualEqual | TokenType::BangEqual => Precedence::Equality,
+            TokenType::Less | TokenType::LessEqual | TokenType::Greater | TokenType::GreaterEqual => Precedence::Comparison,
+            _ => Precedence::None,
         }
     }
 }

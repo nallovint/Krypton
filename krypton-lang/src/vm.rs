@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use std::mem::{MaybeUninit, ManuallyDrop};
+use std::mem::MaybeUninit;
 use std::collections::HashMap;
 
 use crate::bytecode;
@@ -18,6 +18,7 @@ pub enum Error {
     DecodeError(bytecode::Error),
     // Runtime errors
     UndefinedVariable(String),
+    TypeError(String),
 }
 
 impl Display for Error {
@@ -25,6 +26,7 @@ impl Display for Error {
         write!(f, "{}", match self {
             Self::DecodeError(error) => error.to_string(),
             Self::UndefinedVariable(name) => format!("Undefined variable '{}'", name),
+            Self::TypeError(msg) => format!("Type error: {}", msg),
         })
     }
 }
@@ -101,6 +103,15 @@ impl VM {
                 Instruction::DefineGlobal { cp_addr } => self.define_global(cp_addr)?,
                 Instruction::GetGlobal { cp_addr } => self.get_global(cp_addr)?,
                 Instruction::SetGlobal { cp_addr } => self.set_global(cp_addr)?,
+                Instruction::Jump { offset } => self.jump(offset),
+                Instruction::JumpIfFalse { offset } => self.jump_if_false(offset)?,
+                Instruction::EqualEqual => self.equal_equal(),
+                Instruction::BangEqual => self.bang_equal(),
+                Instruction::Less => self.less(),
+                Instruction::LessEqual => self.less_equal(),
+                Instruction::Greater => self.greater(),
+                Instruction::GreaterEqual => self.greater_equal(),
+                Instruction::Print => self.print_value(),
             }
         }
         Ok(())
@@ -235,6 +246,123 @@ impl VM {
             instruction.opcode() as u8 as char,
             instruction
         )
+    }
+
+    #[inline]
+    fn jump(&mut self, offset: u16) {
+        self.ip = (self.ip as i32 + offset as i32) as u32;
+    }
+
+    #[inline]
+    fn jump_if_false(&mut self, offset: u16) -> Result<()> {
+        let value = self.pop();
+        let condition = match value {
+            Value::Int(0) => false,
+            Value::Int(1) => true,
+            _ => return Err(Error::TypeError("Expected boolean value".to_owned())),
+        };
+        if !condition {
+            self.jump(offset);
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn equal_equal(&mut self) {
+        let b = self.pop();
+        let a = self.pop();
+        let result = match (a, b) {
+            (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Float(a), Value::Float(b)) => a == b,
+            (Value::Double(a), Value::Double(b)) => a == b,
+            (Value::String(a), Value::String(b)) => a == b,
+            _ => false,
+        };
+        self.push(Value::Int(if result { 1 } else { 0 }));
+    }
+
+    #[inline]
+    fn bang_equal(&mut self) {
+        let b = self.pop();
+        let a = self.pop();
+        let result = match (a, b) {
+            (Value::Int(a), Value::Int(b)) => a != b,
+            (Value::Float(a), Value::Float(b)) => a != b,
+            (Value::Double(a), Value::Double(b)) => a != b,
+            (Value::String(a), Value::String(b)) => a != b,
+            _ => true,
+        };
+        self.push(Value::Int(if result { 1 } else { 0 }));
+    }
+
+    #[inline]
+    fn less(&mut self) {
+        let b = self.pop();
+        let a = self.pop();
+        let result = match (a, b) {
+            (Value::Int(a), Value::Int(b)) => a < b,
+            (Value::Float(a), Value::Float(b)) => a < b,
+            (Value::Double(a), Value::Double(b)) => a < b,
+            _ => {
+                let _ : std::result::Result<(), Error> = Err(Error::TypeError("Cannot compare non-numeric values".to_owned()));
+                return;
+            },
+        };
+        self.push(Value::Int(if result { 1 } else { 0 }));
+    }
+
+    #[inline]
+    fn less_equal(&mut self) {
+        let b = self.pop();
+        let a = self.pop();
+        let result = match (a, b) {
+            (Value::Int(a), Value::Int(b)) => a <= b,
+            (Value::Float(a), Value::Float(b)) => a <= b,
+            (Value::Double(a), Value::Double(b)) => a <= b,
+            _ => {
+                let _ : std::result::Result<(), Error> = Err(Error::TypeError("Cannot compare non-numeric values".to_owned()));
+                return;
+            },
+        };
+        self.push(Value::Int(if result { 1 } else { 0 }));
+    }
+
+    #[inline]
+    fn greater(&mut self) {
+        let b = self.pop();
+        let a = self.pop();
+        let result = match (a, b) {
+            (Value::Int(a), Value::Int(b)) => a > b,
+            (Value::Float(a), Value::Float(b)) => a > b,
+            (Value::Double(a), Value::Double(b)) => a > b,
+            _ => {
+                let _ : std::result::Result<(), Error> = Err(Error::TypeError("Cannot compare non-numeric values".to_owned()));
+                return;
+            },
+        };
+        self.push(Value::Int(if result { 1 } else { 0 }));
+    }
+
+    #[inline]
+    fn greater_equal(&mut self) {
+        let b = self.pop();
+        let a = self.pop();
+        let result = match (a, b) {
+            (Value::Int(a), Value::Int(b)) => a >= b,
+            (Value::Float(a), Value::Float(b)) => a >= b,
+            (Value::Double(a), Value::Double(b)) => a >= b,
+            _ => {
+                let _ : std::result::Result<(), Error> = Err(Error::TypeError("Cannot compare non-numeric values".to_owned()));
+                return;
+            },
+        };
+        self.push(Value::Int(if result { 1 } else { 0 }));
+    }
+
+    #[inline]
+    fn print_value(&mut self) {
+        let value = self.pop();
+        println!("{}", value);
     }
 }
 

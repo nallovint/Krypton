@@ -1,0 +1,49 @@
+// Complex control flow example with nested if/else and comparisons
+var x = 10;
+var y = 20;
+
+if (x < y) {
+    if ((x + y) > 25) {
+        x = 30;
+    } else {
+        x = 15;
+    }
+} else {
+    y = 5;
+}
+
+// Multiple conditions with else-if like behavior
+var score = 85;
+
+if (score >= 90) {
+    var grade = 1;  // A
+} else {
+    if (score >= 80) {
+        var grade = 2;  // B
+    } else {
+        if (score >= 70) {
+            var grade = 3;  // C
+        } else {
+            var grade = 4;  // F
+        }
+    }
+}
+
+// Comparison chain
+var a = 5;
+var b = 10;
+var c = 15;
+
+if (a < b) {
+    if (b < c) {
+        var result = 1;  // increasing
+    } else {
+        var result = 3;  // mixed
+    }
+} else {
+    if (b > c) {
+        var result = 2;  // decreasing
+    } else {
+        var result = 3;  // mixed
+    }
+} 

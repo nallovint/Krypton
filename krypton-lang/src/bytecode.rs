@@ -77,6 +77,7 @@ pub enum Tag {
     Long = 0b_0100_1001,   // 'I'
     Int = 0b_0110_1001,    // 'i'
     String = 0b_0101_0011, // 'S'
+    Bool = 0b_0110_0010,   // 'b'
 }
 
 impl Tag {
@@ -88,6 +89,7 @@ impl Tag {
             0b_0100_1001 => Ok(Tag::Long),
             0b_0110_1001 => Ok(Tag::Int),
             0b_0101_0011 => Ok(Tag::String),
+            0b_0110_0010 => Ok(Tag::Bool),
             _ => Err(Error::InvalidTag(tag)),
         }
     }
@@ -98,6 +100,7 @@ impl Tag {
             Tag::Double | Tag::Long => 8,
             Tag::Float | Tag::Int => 4,
             Tag::String => 0, // Variable length
+            Tag::Bool => 1,
         }
     }
 }
@@ -109,6 +112,7 @@ pub enum Value {
     Long(i64),
     Int(i32),
     String(String),
+    Bool(bool),
 }
 
 impl Value {
@@ -120,6 +124,7 @@ impl Value {
             Value::Long(_) => Tag::Long,
             Value::Int(_) => Tag::Int,
             Value::String(_) => Tag::String,
+            Value::Bool(_) => Tag::Bool,
         }
     }
 
@@ -131,6 +136,7 @@ impl Value {
             Value::Long(value) => value.to_be_bytes().to_vec(),
             Value::Int(value) => value.to_be_bytes().to_vec(),
             Value::String(value) => value.as_bytes().to_vec(),
+            Value::Bool(value) => vec![if *value { 1 } else { 0 }],
         }
     }
 }
@@ -143,6 +149,7 @@ impl Display for Value {
             Value::Long(value) => value.to_string(),
             Value::Int(value) => value.to_string(),
             Value::String(value) => value.to_string(),
+            Value::Bool(value) => value.to_string(),
         })
     }
 }
@@ -157,6 +164,7 @@ impl std::ops::Neg for Value {
             Value::Long(value) => Value::Long(-value),
             Value::Int(value) => Value::Int(-value),
             Value::String(_) => panic!("Cannot negate string"),
+            Value::Bool(_) => panic!("Cannot negate bool"),
         }
     }
 }
@@ -171,6 +179,7 @@ impl std::ops::Add for Value {
             (Value::Long(lhs), Value::Long(rhs)) => Value::Long(lhs + rhs),
             (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs + rhs),
             (Value::String(lhs), Value::String(rhs)) => Value::String(lhs + &rhs),
+            (Value::Bool(_), Value::Bool(_)) => panic!("Cannot add bools"),
             _ => panic!("Invalid operands"),
         }
     }
@@ -185,7 +194,8 @@ impl std::ops::Sub for Value {
             (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs - rhs),
             (Value::Long(lhs), Value::Long(rhs)) => Value::Long(lhs - rhs),
             (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs - rhs),
-            _ => panic!("Cannot subtract strings"),
+            (Value::Bool(_), Value::Bool(_)) => panic!("Cannot subtract bools"),
+            _ => panic!("Cannot subtract strings or bools"),
         }
     }
 }
@@ -199,7 +209,8 @@ impl std::ops::Mul for Value {
             (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs * rhs),
             (Value::Long(lhs), Value::Long(rhs)) => Value::Long(lhs * rhs),
             (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs * rhs),
-            _ => panic!("Cannot multiply strings"),
+            (Value::Bool(_), Value::Bool(_)) => panic!("Cannot multiply bools"),
+            _ => panic!("Cannot multiply strings or bools"),
         }
     }
 }
@@ -237,22 +248,39 @@ pub enum Opcode {
     DefineGlobal = 0b_01000111, // 'G'
     GetGlobal = 0b_01000110,    // 'g'
     SetGlobal = 0b_01010011,    // 'S'
+    Jump = 0b_01001010,         // 'J'
+    JumpIfFalse = 0b_01001001,  // 'I'
+    EqualEqual = 0b_01100001,   // 'a'
+    BangEqual = 0b_01100010,    // 'b'
+    Less = 0b_01100011,         // 'c'
+    LessEqual = 0b_01100100,    // 'd'
+    Greater = 0b_01100101,      // 'e'
+    GreaterEqual = 0b_01100110, // 'f'
+    Print = 0b_01010000,        // 'P'
 }
 
 impl Opcode {
-    #[allow(clippy::missing_errors_doc)]
     pub const fn from_u8(opcode: u8) -> Result<Self> {
         Ok(match opcode {
-            0b_01000011 => Opcode::LoadConstant, // 'C'
-            0b_01110010 => Opcode::Return,       // 'r'
-            0b_00100001 => Opcode::Negate,       // '!'
-            0b_00101011 => Opcode::Add,          // '+'
-            0b_00101101 => Opcode::Subtract,     // '-'
-            0b_00101010 => Opcode::Multiply,     // '*'
-            0b_00101111 => Opcode::Divide,       // '/'
-            0b_01000111 => Opcode::DefineGlobal, // 'G'
-            0b_01000110 => Opcode::GetGlobal,    // 'g'
-            0b_01010011 => Opcode::SetGlobal,    // 'S'
+            0b_01000011 => Opcode::LoadConstant,   // 'C'
+            0b_01110010 => Opcode::Return,         // 'r'
+            0b_00100001 => Opcode::Negate,         // '!'
+            0b_00101011 => Opcode::Add,            // '+'
+            0b_00101101 => Opcode::Subtract,       // '-'
+            0b_00101010 => Opcode::Multiply,       // '*'
+            0b_00101111 => Opcode::Divide,         // '/'
+            0b_01000111 => Opcode::DefineGlobal,   // 'G'
+            0b_01000110 => Opcode::GetGlobal,      // 'g'
+            0b_01010011 => Opcode::SetGlobal,      // 'S'
+            0b_01001010 => Opcode::Jump,           // 'J'
+            0b_01001001 => Opcode::JumpIfFalse,    // 'I'
+            0b_01100001 => Opcode::EqualEqual,     // 'a'
+            0b_01100010 => Opcode::BangEqual,      // 'b'
+            0b_01100011 => Opcode::Less,           // 'c'
+            0b_01100100 => Opcode::LessEqual,      // 'd'
+            0b_01100101 => Opcode::Greater,        // 'e'
+            0b_01100110 => Opcode::GreaterEqual,   // 'f'
+            0b_01010000 => Opcode::Print,          // 'P'
             _ => return Err(Error::UnrecognizedOpcode(opcode)),
         })
     }
@@ -267,6 +295,9 @@ impl Opcode {
             | Opcode::Subtract
             | Opcode::Multiply
             | Opcode::Divide => 0,
+            Opcode::Jump | Opcode::JumpIfFalse => 2,
+            Opcode::EqualEqual | Opcode::BangEqual | Opcode::Less | Opcode::LessEqual | Opcode::Greater | Opcode::GreaterEqual => 0,
+            Opcode::Print => 0,
         }
     }
 }
@@ -284,6 +315,15 @@ impl Display for Opcode {
             Opcode::DefineGlobal => "defg",
             Opcode::GetGlobal => "getg",
             Opcode::SetGlobal => "setg",
+            Opcode::Jump => "jump",
+            Opcode::JumpIfFalse => "jumpiffalse",
+            Opcode::EqualEqual => "==",
+            Opcode::BangEqual => "~=",
+            Opcode::Less => "<",
+            Opcode::LessEqual => "<=",
+            Opcode::Greater => ">",
+            Opcode::GreaterEqual => ">=",
+            Opcode::Print => "print",
         })
     }
 }
@@ -300,6 +340,15 @@ pub enum Instruction {
     DefineGlobal { cp_addr: u16 },
     GetGlobal { cp_addr: u16 },
     SetGlobal { cp_addr: u16 },
+    Jump { offset: u16 },
+    JumpIfFalse { offset: u16 },
+    EqualEqual,
+    BangEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    Print,
 }
 
 impl Instruction {
@@ -316,6 +365,15 @@ impl Instruction {
             Instruction::DefineGlobal { .. } => Opcode::DefineGlobal,
             Instruction::GetGlobal { .. } => Opcode::GetGlobal,
             Instruction::SetGlobal { .. } => Opcode::SetGlobal,
+            Instruction::Jump { .. } => Opcode::Jump,
+            Instruction::JumpIfFalse { .. } => Opcode::JumpIfFalse,
+            Instruction::EqualEqual => Opcode::EqualEqual,
+            Instruction::BangEqual => Opcode::BangEqual,
+            Instruction::Less => Opcode::Less,
+            Instruction::LessEqual => Opcode::LessEqual,
+            Instruction::Greater => Opcode::Greater,
+            Instruction::GreaterEqual => Opcode::GreaterEqual,
+            Instruction::Print => Opcode::Print,
         }
     }
 
@@ -334,6 +392,15 @@ impl Instruction {
             | Instruction::Subtract
             | Instruction::Multiply
             | Instruction::Divide => {}
+            Instruction::Jump { offset } |
+            Instruction::JumpIfFalse { offset } => bytes.extend(offset.to_be_bytes()),
+            Instruction::EqualEqual |
+            Instruction::BangEqual |
+            Instruction::Less |
+            Instruction::LessEqual |
+            Instruction::Greater |
+            Instruction::GreaterEqual => {}
+            Instruction::Print => {}
         }
         bytes
     }
@@ -352,6 +419,15 @@ impl Display for Instruction {
             Instruction::DefineGlobal { cp_addr } => format!("defg [{cp_addr}]"),
             Instruction::GetGlobal { cp_addr } => format!("getg [{cp_addr}]"),
             Instruction::SetGlobal { cp_addr } => format!("setg [{cp_addr}]"),
+            Instruction::Jump { offset } => format!("jump [{offset}]"),
+            Instruction::JumpIfFalse { offset } => format!("jumpiffalse [{offset}]"),
+            Instruction::EqualEqual => "==".to_owned(),
+            Instruction::BangEqual => "~=".to_owned(),
+            Instruction::Less => "<".to_owned(),
+            Instruction::LessEqual => "<=".to_owned(),
+            Instruction::Greater => ">".to_owned(),
+            Instruction::GreaterEqual => ">=".to_owned(),
+            Instruction::Print => "print".to_owned(),
         })
     }
 }
@@ -579,6 +655,7 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
             Tag::Long => Value::Long(i64::from_be_bytes(entry_bytes.try_into().unwrap())),
             Tag::Int => Value::Int(i32::from_be_bytes(entry_bytes.try_into().unwrap())),
             Tag::String => Value::String(String::from_utf8(entry_bytes.to_vec()).expect("Invalid UTF-8")),
+            Tag::Bool => Value::Bool(entry_bytes[0] != 0),
         };
         klass.constant_pool.push(entry);
         offset += 1 + entry_size;
@@ -612,7 +689,7 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
         )?;
         debug!("Opcode: {}", opcode);
         let operands_size = opcode.operands_size();
-        let instruction_bytes = if operands_size == 0 {
+        let operands = if operands_size == 0 {
             None
         } else {
             Some(
@@ -625,7 +702,7 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
         let instruction = match opcode {
             Opcode::LoadConstant => Instruction::LoadConstant {
                 cp_addr: u16::from_be_bytes(
-                    instruction_bytes
+                    operands
                         .expect("2-bytes long operand")
                         .try_into()
                         .unwrap(),
@@ -639,28 +716,35 @@ pub fn decode(bytecode: &[u8]) -> Result<Klass> {
             Opcode::Divide => Instruction::Divide,
             Opcode::DefineGlobal => Instruction::DefineGlobal {
                 cp_addr: u16::from_be_bytes(
-                    instruction_bytes
+                    operands
                         .expect("2-bytes long operand")
                         .try_into()
                         .unwrap(),
                 ),
             },
-            Opcode::GetGlobal => Instruction::GetGlobal {
-                cp_addr: u16::from_be_bytes(
-                    instruction_bytes
-                        .expect("2-bytes long operand")
-                        .try_into()
-                        .unwrap(),
-                ),
-            },
-            Opcode::SetGlobal => Instruction::SetGlobal {
-                cp_addr: u16::from_be_bytes(
-                    instruction_bytes
-                        .expect("2-bytes long operand")
-                        .try_into()
-                        .unwrap(),
-                ),
-            },
+            Opcode::GetGlobal => {
+                let cp_addr = u16::from_be_bytes(operands.expect("2-bytes long operand").try_into().unwrap());
+                Instruction::GetGlobal { cp_addr }
+            }
+            Opcode::SetGlobal => {
+                let cp_addr = u16::from_be_bytes(operands.expect("2-bytes long operand").try_into().unwrap());
+                Instruction::SetGlobal { cp_addr }
+            }
+            Opcode::Jump => {
+                let offset = u16::from_be_bytes(operands.expect("2-bytes long operand").try_into().unwrap());
+                Instruction::Jump { offset }
+            }
+            Opcode::JumpIfFalse => {
+                let offset = u16::from_be_bytes(operands.expect("2-bytes long operand").try_into().unwrap());
+                Instruction::JumpIfFalse { offset }
+            }
+            Opcode::EqualEqual => Instruction::EqualEqual,
+            Opcode::BangEqual => Instruction::BangEqual,
+            Opcode::Less => Instruction::Less,
+            Opcode::LessEqual => Instruction::LessEqual,
+            Opcode::Greater => Instruction::Greater,
+            Opcode::GreaterEqual => Instruction::GreaterEqual,
+            Opcode::Print => Instruction::Print,
         };
         klass.instructions.push(instruction);
         offset += 1 + operands_size;
